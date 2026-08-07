@@ -45,7 +45,7 @@ export default function PdfControlsSidebar({
       {/* File Name */}
       <div style={pdfFileNameStyle}>📄 {pdfFileName || 'Document.pdf'}</div>
 
-      {/* Zoom Controls */}
+{/* Zoom Controls */}
       <div style={pdfControlGroupStyle}>
         <button onClick={zoomOut} style={pdfControlButtonStyle}>
           − Zoom Out
@@ -56,10 +56,10 @@ export default function PdfControlsSidebar({
         <button onClick={zoomIn} style={pdfControlButtonStyle}>
           + Zoom In
         </button>
-        <button onClick={fitToScreen} style={pdfControlButtonStyle}>
+        <button data-tour="pdf-controls-fit" onClick={fitToScreen} style={pdfControlButtonStyle}>
           ⊡ Fit
         </button>
-        <button style={pdfControlButtonStyle} onClick={onShowThumbnails}>
+<button data-tour="pdf-controls-thumbnails" style={pdfControlButtonStyle} onClick={onShowThumbnails}>
           📑 Pages
         </button>
       </div>
@@ -68,8 +68,9 @@ export default function PdfControlsSidebar({
       <div style={{ width: '80%', height: '1px', backgroundColor: 'rgba(255,255,255,0.15)' }} />
 
       {/* Action Buttons */}
-<div style={pdfControlGroupStyle}><button style={pdfControlButtonStyle} onClick={rotatePage}>🔄</button>
-        <button
+<div style={pdfControlGroupStyle}><button data-tour="pdf-controls-rotate" style={pdfControlButtonStyle} onClick={rotatePage}>🔄</button>
+ <button
+          data-tour="pdf-controls-highlight"
           style={{
             ...pdfControlButtonStyle,
             backgroundColor: highlightMode ? 'rgba(76,175,80,0.35)' : pdfControlButtonStyle.backgroundColor,
@@ -79,8 +80,7 @@ export default function PdfControlsSidebar({
         >
           ✏️
         </button>
-        <button style={pdfControlButtonStyle}>⬇️</button>
-        <button style={pdfControlButtonStyle}>🖨️</button>
+<button data-tour="pdf-controls-download" style={pdfControlButtonStyle}>⬇️export</button>
       </div>
     </div>
   )

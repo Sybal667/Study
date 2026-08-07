@@ -37,6 +37,7 @@ interface PdfViewerProps {
   openNoteHighlightId: number | null
   onToggleNote: (highlightId: number) => void
   highlightMode: boolean
+  onUploadIntent?: () => void
 }
 
 export default function PdfViewer({
@@ -53,6 +54,7 @@ export default function PdfViewer({
   openNoteHighlightId,
   onToggleNote,
   highlightMode ,
+  onUploadIntent
 }: PdfViewerProps) {
   if (!pdfUrl) {
     return (
@@ -69,7 +71,9 @@ export default function PdfViewer({
       >
         <div style={{ fontSize: '48px' }}>📄</div>
         <div style={{ color: 'white', opacity: 0.7 }}>No PDF loaded yet</div>
-        <label
+       <label
+          data-tour="pdf-upload-button"
+          onClick={() => onUploadIntent?.()}
           style={{
             ...navButtonStyle,
             padding: '12px 24px',
@@ -87,7 +91,7 @@ export default function PdfViewer({
   }
 
   return (
-    <div style={{ display: 'block', width: '100%' }}>
+    <div data-tour="pdf-viewer" style={{ display: 'block', width: '100%' }}>
        <style>{textLayerFix}</style>
        <style>{highlightSelectionStyle}</style>
       <Document

@@ -3,48 +3,79 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import { navButtonStyle } from '@/lib/studyStyles'
+import { useMusicContext } from '@/lib/musicContext'
 
 interface MusicDropdownContentProps {
   onClose: () => void
 }
 
+interface YouTubeTrack {
+  id: string
+  title: string
+  artist: string
+  thumbnail?: string
+}
+
 export default function MusicDropdownContent({ onClose }: MusicDropdownContentProps) {
-  const [activeProvider, setActiveProvider] = useState<'youtube' | 'spotify'>('youtube')
-  const [isPlaying, setIsPlaying] = useState(false)
+  const {
+    searchResults,
+    setSearchResults,
+    currentTrack,
+    isPlaying,
+    volume,
+    repeatMode,
+    progress,
+    playTrackAtIndex,
+    handlePlayPause,
+    handlePrevious,
+    handleNext,
+    handleRepeatToggle,
+    setVolumeLevel,
+  } = useMusicContext()
+
   const [searchQuery, setSearchQuery] = useState('')
-  const [repeatMode, setRepeatMode] = useState<'none' | 'all' | 'one'>('none')
-  const [volume, setVolume] = useState(70)
-  const [currentTrack, setCurrentTrack] = useState<{ title: string; artist: string } | null>(null)
+  const [isSearching, setIsSearching] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+
   const [hoveredClose, setHoveredClose] = useState(false)
   const [hoveredPlay, setHoveredPlay] = useState(false)
   const [hoveredPrevious, setHoveredPrevious] = useState(false)
   const [hoveredNext, setHoveredNext] = useState(false)
   const [hoveredRepeat, setHoveredRepeat] = useState(false)
   const [hoveredSearch, setHoveredSearch] = useState(false)
-  const [hoveredTrack, setHoveredTrack] = useState<number | null>(null)
+  const [hoveredTrack, setHoveredTrack] = useState<string | null>(null)
 
-  // Mock data for demonstration
-  const mockResults = [
-    { id: 1, title: 'Song 1', artist: 'Artist 1', duration: '3:20' },
-    { id: 2, title: 'Song 2', artist: 'Artist 2', duration: '4:15' },
-    { id: 3, title: 'Song 3', artist: 'Artist 3', duration: '2:45' },
-    { id: 4, title: 'Song 4', artist: 'Artist 4', duration: '5:30' },
-  ]
-
-  const handlePlayPause = () => {
-    setIsPlaying(!isPlaying)
-  }
-
-  const handleRepeatToggle = () => {
-    if (repeatMode === 'none') setRepeatMode('all')
-    else if (repeatMode === 'all') setRepeatMode('one')
-    else setRepeatMode('none')
+  const formatTime = (seconds: number) => {
+    if (!seconds || isNaN(seconds)) return '0:00'
+    const m = Math.floor(seconds / 60)
+    const s = Math.floor(seconds % 60)
+    return `${m}:${s.toString().padStart(2, '0')}`
   }
 
   const getRepeatIcon = () => {
     if (repeatMode === 'none') return '🔁'
     if (repeatMode === 'all') return '🔁'
     return '🔂'
+  }
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return
+
+    setIsSearching(true)
+    setSearchError(null)
+
+    try {
+      const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(searchQuery)}`)
+      if (!res.ok) throw new Error('Search failed')
+
+      const data = await res.json()
+      setSearchResults(data.results)
+    } catch (err) {
+      console.error(err)
+      setSearchError('Could not load results. Try again.')
+    } finally {
+      setIsSearching(false)
+    }
   }
 
   return (
@@ -56,67 +87,27 @@ export default function MusicDropdownContent({ onClose }: MusicDropdownContentPr
         maxHeight: '480px',
       }}
     >
-      {/* Provider Toggles with Close Button */}
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-        <button
+        <div
           style={{
             ...navButtonStyle,
             flex: 1,
             padding: '8px 12px',
             fontSize: '13px',
-            backgroundColor: activeProvider === 'youtube' ? 'rgba(30, 58, 138, 0.6)' : 'rgba(255,255,255,0.05)',
-            borderColor: activeProvider === 'youtube' ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)',
-            fontWeight: activeProvider === 'youtube' ? 'bold' : 'normal',
+            backgroundColor: 'rgba(30, 58, 138, 0.6)',
+            borderColor: 'rgba(255,255,255,0.3)',
+            fontWeight: 'bold',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: '6px',
             color: 'white',
           }}
-          onClick={() => setActiveProvider('youtube')}
         >
-          <Image
-            src="/youtube.png"
-            alt="YouTube"
-            width={18}
-            height={18}
-            style={{
-              opacity: activeProvider === 'youtube' ? 1 : 0.5,
-            }}
-          />
+          <Image src="/youtube.png" alt="YouTube" width={18} height={18} />
           <span>YouTube</span>
-        </button>
+        </div>
 
-        <button
-          style={{
-            ...navButtonStyle,
-            flex: 1,
-            padding: '8px 12px',
-            fontSize: '13px',
-            backgroundColor: activeProvider === 'spotify' ? 'rgba(30, 58, 138, 0.6)' : 'rgba(255,255,255,0.05)',
-            borderColor: activeProvider === 'spotify' ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)',
-            fontWeight: activeProvider === 'spotify' ? 'bold' : 'normal',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            color: 'white',
-          }}
-          onClick={() => setActiveProvider('spotify')}
-        >
-          <Image
-            src="/spotify.png"
-            alt="Spotify"
-            width={18}
-            height={18}
-            style={{
-              opacity: activeProvider === 'spotify' ? 1 : 0.5,
-            }}
-          />
-          <span>Spotify</span>
-        </button>
-
-        {/* Close Button */}
         <button
           onClick={onClose}
           onMouseEnter={() => setHoveredClose(true)}
@@ -139,7 +130,6 @@ export default function MusicDropdownContent({ onClose }: MusicDropdownContentPr
         </button>
       </div>
 
-      {/* Now Playing Section */}
       <div
         style={{
           backgroundColor: 'rgba(255,255,255,0.05)',
@@ -148,7 +138,6 @@ export default function MusicDropdownContent({ onClose }: MusicDropdownContentPr
           padding: '12px',
         }}
       >
-        {/* Track Info */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div
             style={{
@@ -192,7 +181,6 @@ export default function MusicDropdownContent({ onClose }: MusicDropdownContentPr
           </div>
         </div>
 
-        {/* Progress Bar */}
         <div style={{ marginTop: '10px' }}>
           <div
             style={{
@@ -204,7 +192,9 @@ export default function MusicDropdownContent({ onClose }: MusicDropdownContentPr
           >
             <div
               style={{
-                width: '35%',
+                width: progress.duration
+                  ? `${Math.min((progress.current / progress.duration) * 100, 100)}%`
+                  : '0%',
                 height: '100%',
                 backgroundColor: 'rgba(76, 175, 80, 0.8)',
                 borderRadius: '2px',
@@ -221,131 +211,133 @@ export default function MusicDropdownContent({ onClose }: MusicDropdownContentPr
               marginTop: '4px',
             }}
           >
-            <span>1:23</span>
-            <span>3:45</span>
+            <span>{formatTime(progress.current)}</span>
+            <span>{formatTime(progress.duration)}</span>
           </div>
         </div>
 
-        {/* Volume Control */}
         <div
           style={{
             display: 'flex',
+            justifyContent: 'center',
             alignItems: 'center',
-            gap: '8px',
+            gap: '20px',
             marginTop: '8px',
           }}
         >
-          <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)' }}>🔊</span>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={volume}
-            onChange={(e) => setVolume(parseInt(e.target.value))}
+          <button
+            onMouseEnter={() => setHoveredPrevious(true)}
+            onMouseLeave={() => setHoveredPrevious(false)}
+            onClick={handlePrevious}
             style={{
-              flex: 1,
-              height: '3px',
-              backgroundColor: 'rgba(255,255,255,0.1)',
-              borderRadius: '2px',
-              accentColor: 'rgba(76, 175, 80, 0.8)',
+              background: 'none',
+              border: '1px solid transparent',
+              color: 'white',
               cursor: 'pointer',
+              padding: '8px',
+              fontSize: '20px',
+              borderRadius: '6px',
+              transition: 'all 0.2s',
+              backgroundColor: hoveredPrevious ? 'rgba(255,255,255,0.1)' : 'transparent',
             }}
-          />
+          >
+            ⏮️
+          </button>
+
+          <button
+            onMouseEnter={() => setHoveredPlay(true)}
+            onMouseLeave={() => setHoveredPlay(false)}
+            onClick={handlePlayPause}
+            style={{
+              background: 'none',
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: 'white',
+              cursor: 'pointer',
+              padding: '10px 14px',
+              fontSize: '24px',
+              borderRadius: '50%',
+              backgroundColor: hoveredPlay ? 'rgba(30, 58, 138, 0.8)' : 'rgba(30, 58, 138, 0.6)',
+              transition: 'all 0.2s',
+            }}
+          >
+            {isPlaying ? '⏸️' : '▶️'}
+          </button>
+
+          <button
+            onMouseEnter={() => setHoveredNext(true)}
+            onMouseLeave={() => setHoveredNext(false)}
+            onClick={handleNext}
+            style={{
+              background: 'none',
+              border: '1px solid transparent',
+              color: 'white',
+              cursor: 'pointer',
+              padding: '8px',
+              fontSize: '20px',
+              borderRadius: '6px',
+              transition: 'all 0.2s',
+              backgroundColor: hoveredNext ? 'rgba(255,255,255,0.1)' : 'transparent',
+            }}
+          >
+            ⏭️
+          </button>
+
+          <button
+            onMouseEnter={() => setHoveredRepeat(true)}
+            onMouseLeave={() => setHoveredRepeat(false)}
+            onClick={handleRepeatToggle}
+            style={{
+              background: 'none',
+              border: '1px solid transparent',
+              color: repeatMode !== 'none' ? 'rgba(76, 175, 80, 1)' : 'rgba(255,255,255,0.5)',
+              cursor: 'pointer',
+              padding: '8px',
+              fontSize: '18px',
+              borderRadius: '6px',
+              transition: 'all 0.2s',
+              backgroundColor: hoveredRepeat ? 'rgba(255,255,255,0.1)' : 'transparent',
+            }}
+          >
+            {getRepeatIcon()}
+          </button>
         </div>
       </div>
 
-      {/* Playback Controls */}
       <div
         style={{
           display: 'flex',
-          justifyContent: 'center',
           alignItems: 'center',
-          gap: '20px',
+          gap: '8px',
           padding: '4px 0',
         }}
       >
-        <button
-          onMouseEnter={() => setHoveredPrevious(true)}
-          onMouseLeave={() => setHoveredPrevious(false)}
+        <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)' }}>🔊</span>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={volume}
+          onChange={(e) => setVolumeLevel(parseInt(e.target.value))}
           style={{
-            background: 'none',
-            border: '1px solid transparent',
-            color: 'white',
+            flex: 1,
+            height: '3px',
+            backgroundColor: 'rgba(255,255,255,0.1)',
+            borderRadius: '2px',
+            accentColor: 'rgba(76, 175, 80, 0.8)',
             cursor: 'pointer',
-            padding: '8px',
-            fontSize: '20px',
-            borderRadius: '6px',
-            transition: 'all 0.2s',
-            backgroundColor: hoveredPrevious ? 'rgba(255,255,255,0.1)' : 'transparent',
           }}
-        >
-          ⏮️
-        </button>
-
-        <button
-          onMouseEnter={() => setHoveredPlay(true)}
-          onMouseLeave={() => setHoveredPlay(false)}
-          onClick={handlePlayPause}
-          style={{
-            background: 'none',
-            border: '1px solid rgba(255,255,255,0.2)',
-            color: 'white',
-            cursor: 'pointer',
-            padding: '10px 14px',
-            fontSize: '24px',
-            borderRadius: '50%',
-            backgroundColor: hoveredPlay ? 'rgba(30, 58, 138, 0.8)' : 'rgba(30, 58, 138, 0.6)',
-            transition: 'all 0.2s',
-          }}
-        >
-          {isPlaying ? '⏸️' : '▶️'}
-        </button>
-
-        <button
-          onMouseEnter={() => setHoveredNext(true)}
-          onMouseLeave={() => setHoveredNext(false)}
-          style={{
-            background: 'none',
-            border: '1px solid transparent',
-            color: 'white',
-            cursor: 'pointer',
-            padding: '8px',
-            fontSize: '20px',
-            borderRadius: '6px',
-            transition: 'all 0.2s',
-            backgroundColor: hoveredNext ? 'rgba(255,255,255,0.1)' : 'transparent',
-          }}
-        >
-          ⏭️
-        </button>
-
-        <button
-          onMouseEnter={() => setHoveredRepeat(true)}
-          onMouseLeave={() => setHoveredRepeat(false)}
-          onClick={handleRepeatToggle}
-          style={{
-            background: 'none',
-            border: '1px solid transparent',
-            color: repeatMode !== 'none' ? 'rgba(76, 175, 80, 1)' : 'rgba(255,255,255,0.5)',
-            cursor: 'pointer',
-            padding: '8px',
-            fontSize: '18px',
-            borderRadius: '6px',
-            transition: 'all 0.2s',
-            backgroundColor: hoveredRepeat ? 'rgba(255,255,255,0.1)' : 'transparent',
-          }}
-        >
-          {getRepeatIcon()}
-        </button>
+        />
       </div>
 
-      {/* Search Section */}
       <div style={{ display: 'flex', gap: '8px' }}>
         <input
           type="text"
           placeholder="🔍 Search for songs..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSearch()
+          }}
           style={{
             flex: 1,
             padding: '8px 12px',
@@ -367,6 +359,8 @@ export default function MusicDropdownContent({ onClose }: MusicDropdownContentPr
         <button
           onMouseEnter={() => setHoveredSearch(true)}
           onMouseLeave={() => setHoveredSearch(false)}
+          onClick={handleSearch}
+          disabled={isSearching}
           style={{
             ...navButtonStyle,
             padding: '8px 16px',
@@ -375,29 +369,42 @@ export default function MusicDropdownContent({ onClose }: MusicDropdownContentPr
             color: 'white',
             backgroundColor: hoveredSearch ? 'rgba(30, 58, 138, 0.8)' : 'rgba(30, 58, 138, 0.6)',
             borderColor: 'rgba(255,255,255,0.2)',
+            opacity: isSearching ? 0.6 : 1,
+            cursor: isSearching ? 'not-allowed' : 'pointer',
           }}
         >
-          Search
+          {isSearching ? '...' : 'Search'}
         </button>
       </div>
 
-      {/* Results List */}
       <div
+        className="music-results-scroll"
         style={{
           flex: 1,
           overflowY: 'auto',
           maxHeight: '180px',
+          scrollbarWidth: 'thin',
+          scrollbarColor: 'rgba(255,255,255,0.25) transparent',
         }}
       >
-        {mockResults.map((track) => (
+        {searchError && (
+          <div style={{ padding: '10px', fontSize: '12px', color: 'rgba(255,120,120,0.9)' }}>
+            {searchError}
+          </div>
+        )}
+
+        {!searchError && !isSearching && searchResults.length === 0 && (
+          <div style={{ padding: '10px', fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>
+            Search for a song to get started.
+          </div>
+        )}
+
+        {searchResults.map((track: YouTubeTrack, index: number) => (
           <div
             key={track.id}
             onMouseEnter={() => setHoveredTrack(track.id)}
             onMouseLeave={() => setHoveredTrack(null)}
-            onClick={() => {
-              setCurrentTrack({ title: track.title, artist: track.artist })
-              setIsPlaying(true)
-            }}
+            onClick={() => playTrackAtIndex(index, false)}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -410,7 +417,15 @@ export default function MusicDropdownContent({ onClose }: MusicDropdownContentPr
               borderColor: hoveredTrack === track.id ? 'rgba(255,255,255,0.1)' : 'transparent',
             }}
           >
-            <span style={{ marginRight: '12px', color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>▶</span>
+            {track.thumbnail ? (
+              <img
+                src={track.thumbnail}
+                alt=""
+                style={{ width: '36px', height: '36px', borderRadius: '6px', marginRight: '10px', flexShrink: 0 }}
+              />
+            ) : (
+              <span style={{ marginRight: '12px', color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>▶</span>
+            )}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
@@ -435,12 +450,25 @@ export default function MusicDropdownContent({ onClose }: MusicDropdownContentPr
                 {track.artist}
               </div>
             </div>
-            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', flexShrink: 0 }}>
-              {track.duration}
-            </span>
           </div>
         ))}
       </div>
+
+      <style jsx>{`
+        .music-results-scroll::-webkit-scrollbar {
+          width: 6px;
+        }
+        .music-results-scroll::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .music-results-scroll::-webkit-scrollbar-thumb {
+          background-color: rgba(255, 255, 255, 0.18);
+          border-radius: 10px;
+        }
+        .music-results-scroll::-webkit-scrollbar-thumb:hover {
+          background-color: rgba(255, 255, 255, 0.35);
+        }
+      `}</style>
     </div>
   )
 }

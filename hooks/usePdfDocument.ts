@@ -7,6 +7,8 @@ export function usePdfDocument(
   onUploaded: () => Promise<void> | void
 ) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [pdfId, setPdfId] = useState<number | null>(null)
+  
   const [pdfFile, setPdfFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [numPages, setNumPages] = useState<number | null>(null)
@@ -325,14 +327,26 @@ const saveZoomToDB = async (value: number) => {
         data: { publicUrl },
       } = supabase.storage.from('pdfs').getPublicUrl(`students/${fileName}`)
 
-      setPdfUrl(publicUrl)
+  setPdfUrl(publicUrl)
       setUploading(false)
-      await supabase.from('student_pdfs').insert({
-        student_number: studentNumber,
-        module_id: moduleId,
-        file_name: file.name,
-        file_url: publicUrl,
-      })
+
+      const { data: insertedRow, error: insertErr } = await supabase
+        .from('student_pdfs')
+        .insert({
+          student_number: studentNumber,
+          module_id: moduleId,
+          file_name: file.name,
+          file_url: publicUrl,
+        })
+        .select('pdf_id')
+        .single()
+
+      if (insertErr) {
+        console.error('Failed to save PDF record:', insertErr)
+      } else if (insertedRow) {
+        setPdfId(insertedRow.pdf_id)
+      }
+
       await onUploaded()
     } catch (error) {
       console.error('Error uploading PDF:', error)
@@ -401,8 +415,9 @@ const fitToScreen = () => {
     console.log('SCROLL VALUE:', scrollSaveRef.current)
   }
 
-  const openDocumentFromHistory = async (doc: any) => {
+ const openDocumentFromHistory = async (doc: any) => {
     setPdfUrl(doc.file_url)
+    setPdfId(doc.pdf_id)
 
 const { data, error } = await supabase
       .from('student_pdfs')
@@ -466,8 +481,9 @@ const { data, error } = await supabase
       .eq('pdf_id', doc.pdf_id)
   }
 
-  const completeExternalImport = (publicUrl: string, fileName: string) => {
+ const completeExternalImport = (publicUrl: string, fileName: string, newPdfId: number) => {
     setPdfUrl(publicUrl)
+    setPdfId(newPdfId)
     setPdfFile({ name: fileName } as File)
   }
 
@@ -475,6 +491,7 @@ const { data, error } = await supabase
     pdfUrl,
     pdfFile,
     uploading,
+    pdfId,
     numPages,
     scale,
     rotation,

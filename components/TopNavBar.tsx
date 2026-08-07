@@ -13,6 +13,8 @@ interface TopNavBarProps {
   onOpenDocument: (doc: any) => void
   onImportNew: () => void
   onDeleteDocument: (doc: any) => void
+  forceImportOpen?: boolean
+  onUploadIntent?: () => void
 }
 
 const MAX_DOCUMENTS_PER_MODULE = 3
@@ -25,6 +27,9 @@ export default function TopNavBar({
   onOpenDocument,
   onImportNew,
   onDeleteDocument,
+  forceImportOpen = false,
+  onUploadIntent,
+
 }: TopNavBarProps) {
   const [importOpen, setImportOpen] = useState(false)
   const [musicOpen, setMusicOpen] = useState(false)
@@ -93,11 +98,11 @@ export default function TopNavBar({
     <div style={getNavContainerStyle(showNav)} onMouseEnter={openNav} onMouseLeave={handleNavMouseLeave}>
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
         <div style={{ position: 'relative' }}>
-          <button style={navButtonStyle} onClick={() => setImportOpen(!importOpen)}>
+          <button data-tour="top-nav-import" style={navButtonStyle} onClick={() => setImportOpen(!importOpen)}>
             📥 Import
           </button>
 
-          {importOpen && (
+          {(importOpen || forceImportOpen) && (
             <div
               style={{
                 position: 'absolute',
@@ -111,7 +116,8 @@ export default function TopNavBar({
                 zIndex: 999,
               }}
             >
-              <button
+         <button
+                data-tour="top-nav-import-new"
                 style={{
                   ...navButtonStyle,
                   opacity: documents.length >= MAX_DOCUMENTS_PER_MODULE ? 0.4 : 1,
@@ -125,6 +131,7 @@ export default function TopNavBar({
                 }
                 onClick={() => {
                   if (documents.length >= MAX_DOCUMENTS_PER_MODULE) return
+                  onUploadIntent?.()
                   onImportNew()
                 }}
               >
@@ -132,9 +139,8 @@ export default function TopNavBar({
               </button>
 
               {documents.length > 0 && (
-                <>
+                <div data-tour="top-nav-history">
                   <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '8px 0' }} />
-
                   {documents.map((doc, i) => (
                     <div key={doc.pdf_id} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <button
@@ -162,16 +168,13 @@ export default function TopNavBar({
                       </button>
                     </div>
                   ))}
-                </>
+                </div>
               )}
             </div>
           )}
         </div>
-        <button style={navButtonStyle}>▶️ YouTube</button>
-
-        {/* Music Button */}
         <div style={{ position: 'relative' }}>
-          <button style={navButtonStyle} onClick={handleMusicButtonClick}>
+          <button data-tour="top-nav-music" style={navButtonStyle} onClick={handleMusicButtonClick}>
             🎵 Music
           </button>
 
@@ -182,7 +185,7 @@ export default function TopNavBar({
               style={{
                 position: 'absolute',
                 top: '40px',
-                right: '-20px', 
+                left: '0', 
                 backgroundColor: 'rgba(0,0,0,0.95)',
                 border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: '12px',
@@ -209,14 +212,15 @@ export default function TopNavBar({
           )}
         </div>
 
-        <button style={navButtonStyle}>📝 Notes</button>
-        <button style={navButtonStyle} onClick={() => router.push('/SelectModule')}>
+        <button data-tour="top-nav-notes" style={navButtonStyle}>📝 Notes</button>
+        <button data-tour="top-nav-change-module" style={navButtonStyle} onClick={() => router.push('/SelectModule')}>
           🔁 Change Module
         </button>
       </div>
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-        <button
+<button
+          data-tour="top-nav-profile"
           style={{
             ...navButtonStyle,
             borderRadius: '50%',

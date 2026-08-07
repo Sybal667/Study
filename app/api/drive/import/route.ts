@@ -49,17 +49,21 @@ export async function POST(request: NextRequest) {
     data: { publicUrl },
   } = supabaseAdmin.storage.from('pdfs').getPublicUrl(`students/${storageFileName}`)
 
-  const { error: dbError } = await supabaseAdmin.from('student_pdfs').insert({
-    student_number: parseInt(student_number),
-    module_id: parseInt(module_id),
-    file_name,
-    file_url: publicUrl,
-  })
+const { data: insertedRow, error: dbError } = await supabaseAdmin
+    .from('student_pdfs')
+    .insert({
+      student_number: parseInt(student_number),
+      module_id: parseInt(module_id),
+      file_name,
+      file_url: publicUrl,
+    })
+    .select('pdf_id')
+    .single()
 
-  if (dbError) {
+  if (dbError || !insertedRow) {
     console.error('Failed to insert student_pdfs row:', dbError)
     return NextResponse.json({ error: 'Failed to save document record' }, { status: 500 })
   }
 
-  return NextResponse.json({ file_url: publicUrl })
+  return NextResponse.json({ file_url: publicUrl, pdf_id: insertedRow.pdf_id })
 }

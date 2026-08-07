@@ -7,23 +7,24 @@ interface SelectionInfo {
 }
 
 export function useTextSelectionLookup(
-  containerRef: RefObject<HTMLElement | null>
+  containerRef: RefObject<HTMLElement | null> , 
+  suppressDictionary: boolean = false 
 ) {
   const [selection, setSelection] = useState<SelectionInfo | null>(null);
   const justSelectedRef = useRef(false);
   const selectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    const handleSelection = () => {
+   const handleSelection = () => {
       const sel = window.getSelection();
-      if (!sel || sel.isCollapsed || !containerRef.current) {
+      if (!sel || sel.isCollapsed || !containerRef.current || suppressDictionary) {
         setSelection(null);
         return;
       }
 
       const text = sel.toString().trim();
       
-      if (!text || /\s/.test(text) || text.length > 50) {
+      if (!text || text.length >= 20) {
         setSelection(null);
         return;
       }
@@ -91,7 +92,7 @@ export function useTextSelectionLookup(
         clearTimeout(selectionTimeoutRef.current);
       }
     };
-  }, [containerRef]);
+  }, [containerRef, suppressDictionary]);
 
   const closeSelection = () => setSelection(null);
 

@@ -18,6 +18,11 @@ import DictionaryPopup from '@/components/DictionaryPopup';
 import { useHighlightSelection } from '@/hooks/useHighlightSelection'
 import { useHighlights } from '@/hooks/useHighlights'
 import HighlightNotePopup from '@/components/HighlightNotePopup'
+import { useNoteSuggestion } from '@/hooks/useNoteSuggestion'
+import SaveToNotePopup from '@/components/SaveToNotePopup'
+import TourTooltip from '@/components/TourTooltip'
+import { useTour } from '@/hooks/useTour'
+
 
 
 
@@ -46,6 +51,7 @@ export default function StudyPage() {
     pdfUrl,
     pdfFile,
     uploading,
+    pdfId,
     numPages,
     scale,
     rotation,
@@ -69,11 +75,15 @@ export default function StudyPage() {
     completeExternalImport,
   } = usePdfDocument(studentNumber, moduleId, loadDocuments)
   
-const { selection: wordSelection, closeSelection } = useTextSelectionLookup(pdfContainerRef);
+const [highlightMode, setHighlightMode] = useState(false)
+  const { selection: wordSelection, closeSelection } = useTextSelectionLookup(pdfContainerRef, highlightMode);
 
-  const [highlightMode, setHighlightMode] = useState(false)
   const { pendingHighlight, clearPendingHighlight } = useHighlightSelection(pdfContainerRef, highlightMode)
+  const { pendingNote, clearPendingNote } = useNoteSuggestion(pdfContainerRef, !highlightMode)
   const { highlights, saveHighlight, openNoteHighlightId, toggleNote } = useHighlights(pdfUrl)
+const { activeStep, isLastStep, next: nextTourStep, skip: skipTour, isActive: isTourActive, forceNavOpen, forcePdfControlsOpen, forceImportOpen, dismissBlockingStep } =
+    useTour({ studentNumber, pdfUrl, aiSidebarOpen, uploading })
+
 
   const fitToScreenAndToggleFullscreen = () => {
     fitToScreen()
@@ -119,15 +129,16 @@ const { selection: wordSelection, closeSelection } = useTextSelectionLookup(pdfC
           openNoteHighlightId={openNoteHighlightId}
           onToggleNote={toggleNote}
           highlightMode={highlightMode}
+          onUploadIntent={dismissBlockingStep}
         />
       </div>
 
       {/* PDF CONTROLS - Left Sidebar */}
       {pdfUrl && (
-       <PdfControlsSidebar
+<PdfControlsSidebar
           pdfFileName={pdfFile?.name}
           scale={scale}
-          showPdfControls={showPdfControls}
+          showPdfControls={showPdfControls || forcePdfControlsOpen}
           openPdfControls={openPdfControls}
           closePdfControlsDelayed={closePdfControlsDelayed}
           zoomIn={zoomIn}
@@ -156,8 +167,10 @@ const { selection: wordSelection, closeSelection } = useTextSelectionLookup(pdfC
       <div style={topSectionStyle}>
         <StudyTimer />
 
-        <TopNavBar
-          showNav={showNav}
+       <TopNavBar
+          showNav={showNav || forceNavOpen}
+          forceImportOpen={forceImportOpen}
+          onUploadIntent={dismissBlockingStep}
           openNav={openNav}
           closeNavDelayed={closeNavDelayed}
           documents={documents}
@@ -223,7 +236,7 @@ onFileSelected={async (file) => {
           return
         }
 
-        completeExternalImport(data.file_url, file.name)
+        completeExternalImport(data.file_url, file.name, data.pdf_id)
         await loadDocuments()
       } catch (err) {
         console.error('Drive import failed:', err)
@@ -299,12 +312,36 @@ onFileSelected={async (file) => {
   />
 )}
 
+{pendingNote && (
+  <SaveToNotePopup
+    pending={pendingNote}
+    onSave={async () => {
+      await saveHighlight(pendingNote, '')
+      clearPendingNote()
+    }}
+    onDismiss={clearPendingNote}
+  />
+)}
+
+{isTourActive && activeStep && (
+  <TourTooltip
+    key={activeStep.id}
+    step={activeStep}
+    onNext={nextTourStep}
+    onSkip={skipTour}
+    isLastStep={isLastStep}
+  />
+)}
+
       <AiSidebar
         pdfUrl={pdfUrl}
         isOpen={aiSidebarOpen}
+        pdfId={pdfId}
         onOpenChange={setAiSidebarOpen}
         width={aiSidebarWidth}
         onWidthChange={setAiSidebarWidth}
+        currentPage={currentPage}
+        totalPages={numPages ?? 0}
       />
     </div>
   )
