@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   searchUrl.searchParams.set('part', 'snippet')
   searchUrl.searchParams.set('q', query)
   searchUrl.searchParams.set('type', 'video')
-  searchUrl.searchParams.set('videoCategoryId', '10') // Music category
+  searchUrl.searchParams.set('videoCategoryId', '10') 
   searchUrl.searchParams.set('maxResults', '10')
   searchUrl.searchParams.set('key', apiKey)
 
