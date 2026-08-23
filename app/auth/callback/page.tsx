@@ -29,8 +29,6 @@ export default function AuthCallback() {
         const email = user.email || ''
         const fullName = user.user_metadata?.full_name || 'Unknown'
 
-        console.log('📧 Email:', email)
-        console.log('👤 Full Name:', fullName)
 
         const studentNum = parseInt(email.split('@')[0])
 
@@ -49,7 +47,6 @@ export default function AuthCallback() {
         )
 
         if (!hasPassword) {
-          console.log('🔑 Google user without password - asking for password')
           setShowPasswordForm(true)
           return
         }
@@ -78,7 +75,6 @@ export default function AuthCallback() {
     }
 
     if (existingStudent) {
-      console.log('✅ Existing student found - LOGIN')
       if (existingStudent.full_name !== fullName) {
         await supabase
           .from('students')
@@ -87,10 +83,8 @@ export default function AuthCallback() {
       }
 
       if (!existingStudent.degree_id || !existingStudent.current_year) {
-        console.log('⚠️ Student needs onboarding')
         router.push('/LandingPage')
       } else {
-        console.log('✅ Student has all info')
         router.push('/LandingPage')
       }
       return
@@ -112,7 +106,6 @@ export default function AuthCallback() {
       return
     }
 
-    console.log('✅ New student created')
     router.push('/LandingPage')
   }
 
