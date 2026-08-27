@@ -42,16 +42,46 @@ export default function AuthCallback() {
         setUserFullName(fullName)
         setStudentNumber(studentNum)
 
-        const hasPassword = user.identities?.some(
-          identity => identity.provider === 'email'
-        )
+        const { data: student, error: studentError } = await supabase
+          .from('students')
+          .select('student_number, full_name, degree_id, current_year, password_set')
+          .eq('student_number', studentNum)
+          .maybeSingle()
 
-        if (!hasPassword) {
+        if (studentError) {
+          console.error('Student lookup error:', studentError)
+          router.push('/logIn?error=db-error')
+          return
+        }
+
+        if (!student) {
+          const { error: insertError } = await supabase
+            .from('students')
+            .insert({
+              student_number: studentNum,
+              email: email,
+              full_name: fullName,
+              degree_id: null,
+              current_year: null,
+              password_set: false
+            })
+
+          if (insertError) {
+            console.error('Database insert error:', insertError)
+            router.push('/signup?error=db-error')
+            return
+          }
+
           setShowPasswordForm(true)
           return
         }
 
-        await handleExistingUser(email, fullName, studentNum)
+        if (!student.password_set) {
+          setShowPasswordForm(true)
+          return
+        }
+
+        await handleExistingUser(email, fullName, studentNum, student)
 
       } catch (error) {
         console.error('❌ Unexpected error:', error)
@@ -61,17 +91,26 @@ export default function AuthCallback() {
     handleAuthCallback()
   }, [])
 
-  async function handleExistingUser(email: string, fullName: string, studentNum: number) {
-    const { data: existingStudent, error: checkError } = await supabase
-      .from('students')
-      .select('student_number, full_name, degree_id, current_year')
-      .eq('student_number', studentNum)
-      .maybeSingle()
+  async function handleExistingUser(email: string, fullName: string, studentNum: number, existingStudent?: {
+    student_number: number
+    full_name: string | null
+    degree_id: number | null
+    current_year: number | null
+  }) {
+    if (!existingStudent) {
+      const { data: student, error: checkError } = await supabase
+        .from('students')
+        .select('student_number, full_name, degree_id, current_year')
+        .eq('student_number', studentNum)
+        .maybeSingle()
 
-    if (checkError) {
-      console.error(checkError)
-      router.push('/logIn?error=db-error')
-      return
+      if (checkError) {
+        console.error(checkError)
+        router.push('/logIn?error=db-error')
+        return
+      }
+
+      existingStudent = student ?? undefined
     }
 
     if (existingStudent) {
@@ -85,7 +124,7 @@ export default function AuthCallback() {
       if (!existingStudent.degree_id || !existingStudent.current_year) {
         router.push('/LandingPage')
       } else {
-        router.push('/LandingPage')
+        router.push('/SelectModule')
       }
       return
     }
@@ -95,7 +134,7 @@ export default function AuthCallback() {
       .insert({
         student_number: studentNum,
         email: email,
-        full_name: fullName ,
+        full_name: fullName,
         degree_id: null,
         current_year: null
       })
@@ -143,6 +182,11 @@ export default function AuthCallback() {
       return
     }
 
+    await supabase
+      .from('students')
+      .update({ password_set: true })
+      .eq('student_number', studentNumber)
+
     if (userEmail && studentNumber) {
       await handleExistingUser(userEmail, userFullName, studentNumber)
     }
@@ -184,7 +228,7 @@ export default function AuthCallback() {
           <p style={{ fontSize: '18px', marginBottom: '30px', opacity: 0.8 }}>
             You signed up with Google. Set a password so you can login with email too.
           </p>
-          
+
           <input
             type="password"
             placeholder="Password (min 6 characters)"
@@ -258,8 +302,8 @@ export default function AuthCallback() {
       >
         <h2 style={{ marginBottom: '10px' }}>🔄 Processing...</h2>
         <p style={{ opacity: 0.8, fontSize: '18px' }}>
-          {typeof window !== 'undefined' && window.location.search.includes('code') 
-            ? 'Signing you in with Google...' 
+          {typeof window !== 'undefined' && window.location.search.includes('code')
+            ? 'Signing you in with Google...'
             : 'Verifying your account...'}
         </p>
         <div
