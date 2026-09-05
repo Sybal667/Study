@@ -1,5 +1,7 @@
 'use client'
 
+import { jsPDF } from 'jspdf'
+
 interface Highlight {
     highlight_id: number
     page_number: number
@@ -18,6 +20,55 @@ export default function NotesExportPreview({
     pdfFileName,
     onClose,
 }: NotesExportPreviewProps) {
+
+    const handleDownloadPdf = () => {
+        const doc = new jsPDF()
+
+        doc.setFontSize(18)
+        doc.text('Notes Export', 20, 20)
+
+        doc.setFontSize(12)
+        doc.text(`Document: ${pdfFileName || 'Document.pdf'}`, 20, 30)
+
+        let y = 45
+
+        highlights.forEach((highlight) => {
+            doc.setFontSize(13)
+            doc.text(`Page ${highlight.page_number}`, 20, y)
+            y += 8
+
+            doc.setFontSize(11)
+
+            const highlightLines = doc.splitTextToSize(
+                highlight.highlighted_text,
+                170
+            )
+
+            doc.text(highlightLines, 20, y)
+            y += highlightLines.length * 6
+
+            if (highlight.note) {
+                y += 3
+
+                const noteLines = doc.splitTextToSize(
+                    `Note: ${highlight.note}`,
+                    170
+                )
+
+                doc.text(noteLines, 20, y)
+                y += noteLines.length * 6
+            }
+
+            y += 10
+
+            if (y > 270) {
+                doc.addPage()
+                y = 20
+            }
+        })
+
+        doc.save('study-notes.pdf')
+    }
     return (
         <div
             style={{
@@ -70,10 +121,15 @@ export default function NotesExportPreview({
                         </div>
                     ))
                 )}
+                <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                    <button onClick={handleDownloadPdf}>
+                        Download PDF
+                    </button>
 
-                <button onClick={onClose}>
-                    Close
-                </button>
+                    <button onClick={onClose}>
+                        Close
+                    </button>
+                </div>
             </div>
         </div>
     )
