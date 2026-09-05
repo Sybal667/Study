@@ -106,12 +106,9 @@ export default function SignupPage() {
         setLoading(false)
         return
       }
-
-      //SUCCESS!
       setMessage('✅ Account created successfully!Ke ya leboha fro trying the app🙏')
       setAttempts(0)
       
-      // Redirect to onboarding after a short delay--just to make sure communication from supabase is completed 
       setTimeout(() => {
         router.push('/LandingPage')
       }, 1500)
@@ -147,7 +144,6 @@ export default function SignupPage() {
         backgroundRepeat: 'no-repeat',
       }}
     >
-      {/* Error messages from URL params */}
       {error === 'auth-failed' && (
         <p style={{ color: 'red', position: 'absolute', top: '20px' }}>
           Login failed. Please try again.
@@ -178,7 +174,7 @@ export default function SignupPage() {
           Create Account
         </h4>
         
-        {/* Rate Limit Warning */}
+        
         {attempts >= 2 && (
           <p style={{ 
             color: '#ffd93d', 
