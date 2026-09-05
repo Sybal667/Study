@@ -21,6 +21,7 @@ import HighlightNotePopup from '@/components/HighlightNotePopup'
 import { useNoteSuggestion } from '@/hooks/useNoteSuggestion'
 import SaveToNotePopup from '@/components/SaveToNotePopup'
 import TourTooltip from '@/components/TourTooltip'
+import NotesExportPreview from '@/components/NotesExportPreview'
 import { useTour } from '@/hooks/useTour'
 
 
@@ -43,7 +44,8 @@ export default function StudyPage() {
   const [driveImportingFile, setDriveImportingFile] = useState<string | null>(null)
   const [aiSidebarOpen, setAiSidebarOpen] = useState(false)
   const [aiSidebarWidth, setAiSidebarWidth] = useState(AI_SIDEBAR_DEFAULT_WIDTH)
-  const { showNav, showPdfControls, openNav, closeNavDelayed, openPdfControls, closePdfControlsDelayed } =  useHoverPanels()
+  const [showNotesExport, setShowNotesExport] = useState(false)
+  const { showNav, showPdfControls, openNav, closeNavDelayed, openPdfControls, closePdfControlsDelayed } = useHoverPanels()
   const { studentNumber, moduleId, documents, loadDocuments } = useStudentContext()
 
 
@@ -67,21 +69,21 @@ export default function StudyPage() {
     zoomIn,
     zoomOut,
     fitToScreen,
-  handleContainerScroll,
- openDocumentFromHistory,
+    handleContainerScroll,
+    openDocumentFromHistory,
     updatePage,
     goToPage,
     rotatePage,
     completeExternalImport,
   } = usePdfDocument(studentNumber, moduleId, loadDocuments)
-  
-const [highlightMode, setHighlightMode] = useState(false)
+
+  const [highlightMode, setHighlightMode] = useState(false)
   const { selection: wordSelection, closeSelection } = useTextSelectionLookup(pdfContainerRef, highlightMode);
 
   const { pendingHighlight, clearPendingHighlight } = useHighlightSelection(pdfContainerRef, highlightMode)
   const { pendingNote, clearPendingNote } = useNoteSuggestion(pdfContainerRef, !highlightMode)
   const { highlights, saveHighlight, openNoteHighlightId, toggleNote } = useHighlights(pdfUrl)
-const { activeStep, isLastStep, next: nextTourStep, skip: skipTour, isActive: isTourActive, forceNavOpen, forcePdfControlsOpen, forceImportOpen, dismissBlockingStep } =
+  const { activeStep, isLastStep, next: nextTourStep, skip: skipTour, isActive: isTourActive, forceNavOpen, forcePdfControlsOpen, forceImportOpen, dismissBlockingStep } =
     useTour({ studentNumber, pdfUrl, aiSidebarOpen, uploading })
 
 
@@ -91,16 +93,19 @@ const { activeStep, isLastStep, next: nextTourStep, skip: skipTour, isActive: is
       document.documentElement.requestFullscreen().catch(() => {
       })
     } else {
-      document.exitFullscreen().catch(() => {})
+      document.exitFullscreen().catch(() => { })
     }
+  }
+  const handleExport = () => {
+    setShowNotesExport(true)
   }
 
   useEffect(() => {
-  const params = new URLSearchParams(window.location.search)
-  if (params.get('drive_connected') === 'true') {
-    setShowDriveBrowser(true)
-  }
-}, [])
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('drive_connected') === 'true') {
+      setShowDriveBrowser(true)
+    }
+  }, [])
 
   return (
     <div style={containerStyle}>
@@ -110,7 +115,7 @@ const { activeStep, isLastStep, next: nextTourStep, skip: skipTour, isActive: is
       {/* LEFT HOVER ZONE(pdf editing) */}
       <div style={leftHoverZoneStyle} onMouseEnter={openPdfControls} onMouseLeave={closePdfControlsDelayed} />
 
-     <div
+      <div
         ref={pdfContainerRef}
         style={getPdfContainerStyle(aiSidebarOpen ? aiSidebarWidth : 0)}
         onScroll={handleContainerScroll}
@@ -135,7 +140,7 @@ const { activeStep, isLastStep, next: nextTourStep, skip: skipTour, isActive: is
 
       {/* PDF CONTROLS - Left Sidebar */}
       {pdfUrl && (
-<PdfControlsSidebar
+        <PdfControlsSidebar
           pdfFileName={pdfFile?.name}
           scale={scale}
           showPdfControls={showPdfControls || forcePdfControlsOpen}
@@ -148,10 +153,11 @@ const { activeStep, isLastStep, next: nextTourStep, skip: skipTour, isActive: is
           rotatePage={rotatePage}
           highlightMode={highlightMode}
           onToggleHighlightMode={() => setHighlightMode((prev) => !prev)}
+          onExport={handleExport}
         />
       )}
 
-{showThumbnails && (
+      {showThumbnails && (
         <ThumbnailSidebar
           sidebarRef={sidebarRef}
           pageThumbnails={pageThumbnails}
@@ -167,7 +173,7 @@ const { activeStep, isLastStep, next: nextTourStep, skip: skipTour, isActive: is
       <div style={topSectionStyle}>
         <StudyTimer />
 
-       <TopNavBar
+        <TopNavBar
           showNav={showNav || forceNavOpen}
           forceImportOpen={forceImportOpen}
           onUploadIntent={dismissBlockingStep}
@@ -209,129 +215,135 @@ const { activeStep, isLastStep, next: nextTourStep, skip: skipTour, isActive: is
         />
       )}
 
-{showDriveBrowser && studentNumber && (
-  <DriveFileBrowser
-    studentNumber={studentNumber}
-    onClose={() => setShowDriveBrowser(false)}
-onFileSelected={async (file) => {
-      setShowDriveBrowser(false)
-      setDriveImportingFile(file.name)
+      {showDriveBrowser && studentNumber && (
+        <DriveFileBrowser
+          studentNumber={studentNumber}
+          onClose={() => setShowDriveBrowser(false)}
+          onFileSelected={async (file) => {
+            setShowDriveBrowser(false)
+            setDriveImportingFile(file.name)
 
-      try {
-        const res = await fetch('/api/drive/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            student_number: studentNumber,
-            module_id: moduleId,
-            file_id: file.id,
-            file_name: file.name,
-          }),
-        })
+            try {
+              const res = await fetch('/api/drive/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  student_number: studentNumber,
+                  module_id: moduleId,
+                  file_id: file.id,
+                  file_name: file.name,
+                }),
+              })
 
-        const data = await res.json()
+              const data = await res.json()
 
-        if (!res.ok) {
-          console.error('Drive import failed:', data.error)
-          return
-        }
+              if (!res.ok) {
+                console.error('Drive import failed:', data.error)
+                return
+              }
 
-        completeExternalImport(data.file_url, file.name, data.pdf_id)
-        await loadDocuments()
-      } catch (err) {
-        console.error('Drive import failed:', err)
-      } finally {
-        setDriveImportingFile(null)
-      }
-    }}
-    
-  />
-)}
+              completeExternalImport(data.file_url, file.name, data.pdf_id)
+              await loadDocuments()
+            } catch (err) {
+              console.error('Drive import failed:', err)
+            } finally {
+              setDriveImportingFile(null)
+            }
+          }}
 
-{driveImportingFile && (
-  <div
-    style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.6)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 9999,
-    }}
-  >
-    <div
-      style={{
-        backgroundColor: 'rgba(0,0,0,0.9)',
-        padding: '32px 40px',
-        borderRadius: '12px',
-        border: '1px solid rgba(255,255,255,0.15)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '16px',
-      }}
-    >
-      <div
-        style={{
-          width: '32px',
-          height: '32px',
-          border: '3px solid rgba(255,255,255,0.2)',
-          borderTopColor: '#4CAF50',
-          borderRadius: '50%',
-          animation: 'drive-spin 0.8s linear infinite',
-        }}
-      />
-      <div style={{ color: 'white', fontSize: '14px', textAlign: 'center' }}>
-        ☁️ Importing <strong>{driveImportingFile}</strong> from Drive...
-      </div>
-    </div>
-    <style>{`
+        />
+      )}
+
+      {driveImportingFile && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: 'rgba(0,0,0,0.9)',
+              padding: '32px 40px',
+              borderRadius: '12px',
+              border: '1px solid rgba(255,255,255,0.15)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '16px',
+            }}
+          >
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                border: '3px solid rgba(255,255,255,0.2)',
+                borderTopColor: '#4CAF50',
+                borderRadius: '50%',
+                animation: 'drive-spin 0.8s linear infinite',
+              }}
+            />
+            <div style={{ color: 'white', fontSize: '14px', textAlign: 'center' }}>
+              ☁️ Importing <strong>{driveImportingFile}</strong> from Drive...
+            </div>
+          </div>
+          <style>{`
       @keyframes drive-spin {
         to { transform: rotate(360deg); }
       }
     `}</style>
-  </div>
-)}
+        </div>
+      )}
 
-{wordSelection && (
-  <DictionaryPopup selection={wordSelection} onClose={closeSelection} />
-)}
+      {wordSelection && (
+        <DictionaryPopup selection={wordSelection} onClose={closeSelection} />
+      )}
 
-{pendingHighlight && (
-  <HighlightNotePopup
-    pending={pendingHighlight}
-    onSave={async (note) => {
-      await saveHighlight(pendingHighlight, note)
-      clearPendingHighlight()
-    }}
-    onCancel={clearPendingHighlight}
-  />
-)}
+      {pendingHighlight && (
+        <HighlightNotePopup
+          pending={pendingHighlight}
+          onSave={async (note) => {
+            await saveHighlight(pendingHighlight, note)
+            clearPendingHighlight()
+          }}
+          onCancel={clearPendingHighlight}
+        />
+      )}
 
-{pendingNote && (
-  <SaveToNotePopup
-    pending={pendingNote}
-    onSave={async () => {
-      await saveHighlight(pendingNote, '')
-      clearPendingNote()
-    }}
-    onDismiss={clearPendingNote}
-  />
-)}
+      {pendingNote && (
+        <SaveToNotePopup
+          pending={pendingNote}
+          onSave={async () => {
+            await saveHighlight(pendingNote, '')
+            clearPendingNote()
+          }}
+          onDismiss={clearPendingNote}
+        />
+      )}
 
-{isTourActive && activeStep && (
-  <TourTooltip
-    key={activeStep.id}
-    step={activeStep}
-    onNext={nextTourStep}
-    onSkip={skipTour}
-    isLastStep={isLastStep}
-  />
-)}
+      {isTourActive && activeStep && (
+        <TourTooltip
+          key={activeStep.id}
+          step={activeStep}
+          onNext={nextTourStep}
+          onSkip={skipTour}
+          isLastStep={isLastStep}
+        />
+      )}
+
+      {showNotesExport && (
+        <NotesExportPreview
+          onClose={() => setShowNotesExport(false)}
+        />
+      )}
 
       <AiSidebar
         pdfUrl={pdfUrl}
