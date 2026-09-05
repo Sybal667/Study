@@ -341,6 +341,8 @@ export default function StudyPage() {
 
       {showNotesExport && (
         <NotesExportPreview
+          highlights={highlights}
+          pdfFileName={pdfFile?.name}   
           onClose={() => setShowNotesExport(false)}
         />
       )}

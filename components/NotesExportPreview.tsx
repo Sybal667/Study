@@ -1,10 +1,21 @@
 'use client'
 
+interface Highlight {
+    highlight_id: number
+    page_number: number
+    highlighted_text: string
+    note: string | null
+}
+
 interface NotesExportPreviewProps {
+    highlights: Highlight[]
+    pdfFileName: string | undefined
     onClose: () => void
 }
 
 export default function NotesExportPreview({
+    highlights,
+    pdfFileName,
     onClose,
 }: NotesExportPreviewProps) {
     return (
@@ -36,9 +47,33 @@ export default function NotesExportPreview({
             >
                 <h2>Notes Export Preview</h2>
 
-                <p>Your saved highlights and notes will appear here.</p>
+                <p>
+                    <strong>Document:</strong> {pdfFileName || 'Document.pdf'}
+                </p>
 
-                <button onClick={onClose}>Close</button>
+                {highlights.length === 0 ? (
+                    <p>No saved highlights or notes for this document.</p>
+                ) : (
+                    highlights.map((highlight) => (
+                        <div key={highlight.highlight_id}>
+                            <h3>Page {highlight.page_number}</h3>
+
+                            <p>{highlight.highlighted_text}</p>
+
+                            {highlight.note && (
+                                <p>
+                                    <strong>Note:</strong> {highlight.note}
+                                </p>
+                            )}
+
+                            <hr />
+                        </div>
+                    ))
+                )}
+
+                <button onClick={onClose}>
+                    Close
+                </button>
             </div>
         </div>
     )
