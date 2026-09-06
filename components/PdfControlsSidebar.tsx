@@ -20,6 +20,7 @@ interface PdfControlsSidebarProps {
   rotatePage: () => void
   highlightMode: boolean
   onToggleHighlightMode: () => void
+  onExport: () => void
 }
 
 export default function PdfControlsSidebar({
@@ -35,6 +36,7 @@ export default function PdfControlsSidebar({
   rotatePage,
   highlightMode,
   onToggleHighlightMode,
+  onExport,
 }: PdfControlsSidebarProps) {
   return (
     <div
@@ -80,7 +82,7 @@ export default function PdfControlsSidebar({
         >
           ✏️
         </button>
-<button data-tour="pdf-controls-download" style={pdfControlButtonStyle}>⬇️export</button>
+<button data-tour="pdf-controls-download" style={pdfControlButtonStyle} onClick={onExport}>⬇️export</button>
       </div>
     </div>
   )
