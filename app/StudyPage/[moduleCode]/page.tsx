@@ -82,7 +82,7 @@ export default function StudyPage() {
 
   const { pendingHighlight, clearPendingHighlight } = useHighlightSelection(pdfContainerRef, highlightMode)
   const { pendingNote, clearPendingNote } = useNoteSuggestion(pdfContainerRef, !highlightMode)
-  const { highlights, saveHighlight, openNoteHighlightId, toggleNote } = useHighlights(pdfUrl)
+  const { highlights, saveHighlight, openNoteHighlightId, toggleNote } = useHighlights(pdfId)
   const { activeStep, isLastStep, next: nextTourStep, skip: skipTour, isActive: isTourActive, forceNavOpen, forcePdfControlsOpen, forceImportOpen, dismissBlockingStep } =
     useTour({ studentNumber, pdfUrl, aiSidebarOpen, uploading })
 
@@ -342,7 +342,8 @@ export default function StudyPage() {
       {showNotesExport && (
         <NotesExportPreview
           highlights={highlights}
-          pdfFileName={pdfFile?.name}   
+          pdfFileName={pdfFile?.name} 
+          pdfUrl={pdfUrl}  
           onClose={() => setShowNotesExport(false)}
         />
       )}

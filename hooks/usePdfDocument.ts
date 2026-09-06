@@ -119,7 +119,7 @@ const saveZoomToDB = async (value: number) => {
 
     const container = pdfContainerRef.current
 
-   const { data } = await supabase
+    const { data } = await supabase
       .from('student_pdfs')
       .select('scroll_position, last_page, zoom_level, rotation')
       .eq('file_url', pdfUrl)
@@ -415,9 +415,10 @@ const fitToScreen = () => {
     console.log('SCROLL VALUE:', scrollSaveRef.current)
   }
 
- const openDocumentFromHistory = async (doc: any) => {
+const openDocumentFromHistory = async (doc: any) => {
     setPdfUrl(doc.file_url)
     setPdfId(doc.pdf_id)
+    setPdfFile({ name: doc.file_name } as File)
 
 const { data, error } = await supabase
       .from('student_pdfs')
@@ -481,7 +482,7 @@ const { data, error } = await supabase
       .eq('pdf_id', doc.pdf_id)
   }
 
- const completeExternalImport = (publicUrl: string, fileName: string, newPdfId: number) => {
+  const completeExternalImport = (publicUrl: string, fileName: string, newPdfId: number) => {
     setPdfUrl(publicUrl)
     setPdfId(newPdfId)
     setPdfFile({ name: fileName } as File)
@@ -508,7 +509,7 @@ const { data, error } = await supabase
     zoomIn,
     zoomOut,
     fitToScreen,
-   handleContainerScroll,
+    handleContainerScroll,
     openDocumentFromHistory,
     savePageToDB,
     updatePage,
