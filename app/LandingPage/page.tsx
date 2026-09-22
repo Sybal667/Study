@@ -34,7 +34,7 @@ export default function OnboardingPage() {
 
   async function getStudentInfo() {
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (user?.email) {
       const email = user.email
       const num = parseInt(email.split('@')[0])
@@ -264,11 +264,21 @@ export default function OnboardingPage() {
                 }}
                 style={selectStyle}
               >
-                <option value="">Select Year</option>
-                <option value="1">1st Year</option>
-                <option value="2">2nd Year</option>
-                <option value="3">3rd Year</option>
-                <option value="4">4th Year</option>
+                <option value="" style={{ backgroundColor: '#222', color: 'white' }}>
+                  Select Year
+                </option>
+                <option value="1" style={{ backgroundColor: '#222', color: 'white' }}>
+                  1st Year
+                </option>
+                <option value="2" style={{ backgroundColor: '#222', color: 'white' }}>
+                  2nd Year
+                </option>
+                <option value="3" style={{ backgroundColor: '#222', color: 'white' }}>
+                  3rd Year
+                </option>
+                <option value="4" style={{ backgroundColor: '#222', color: 'white' }}>
+                  4th Year
+                </option>
               </select>
             </div>
           )}
