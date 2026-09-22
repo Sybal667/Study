@@ -10,41 +10,39 @@ export interface Highlight {
   rects: HighlightRect[]
 }
 
-export function useHighlights(pdfUrl: string | null) {
-  const [pdfId, setPdfId] = useState<number | null>(null)
+export function useHighlights(pdfId: number | null) {
   const [highlights, setHighlights] = useState<Highlight[]>([])
   const [openNoteHighlightId, setOpenNoteHighlightId] = useState<number | null>(null)
 
   useEffect(() => {
-    const loadPdfIdAndHighlights = async () => {
+    const loadHighlights = async () => {
       setHighlights([])
-      setPdfId(null)
       setOpenNoteHighlightId(null)
 
-      if (!pdfUrl) return
+      if (!pdfId) return
 
-      const { data: pdfRow } = await supabase
-        .from('student_pdfs')
-        .select('pdf_id')
-        .eq('file_url', pdfUrl)
-        .single()
-
-      if (!pdfRow) return
-      setPdfId(pdfRow.pdf_id)
-
-      const { data: rows } = await supabase
+      const { data: rows, error } = await supabase
         .from('pdf_highlights')
         .select('highlight_id, page_number, highlighted_text, note, rects')
-        .eq('pdf_id', pdfRow.pdf_id)
+        .eq('pdf_id', pdfId)
 
-      if (rows) setHighlights(rows as Highlight[])
+      if (error) {
+        console.error('Failed to load highlights:', error)
+        return
+      }
+
+      if (rows) {
+        setHighlights(rows as Highlight[])
+      }
     }
 
-    loadPdfIdAndHighlights()
-  }, [pdfUrl])
+    loadHighlights()
+  }, [pdfId])
 
   const saveHighlight = async (pending: PendingHighlight, note: string) => {
-    if (!pdfId) return
+    if (!pdfId) {
+      return
+    }
 
     const { data, error } = await supabase
       .from('pdf_highlights')
@@ -69,8 +67,15 @@ export function useHighlights(pdfUrl: string | null) {
   }
 
   const toggleNote = (highlightId: number) => {
-    setOpenNoteHighlightId((prev) => (prev === highlightId ? null : highlightId))
+    setOpenNoteHighlightId((prev) =>
+      prev === highlightId ? null : highlightId
+    )
   }
 
-  return { highlights, saveHighlight, openNoteHighlightId, toggleNote }
+  return {
+    highlights,
+    saveHighlight,
+    openNoteHighlightId,
+    toggleNote,
+  }
 }

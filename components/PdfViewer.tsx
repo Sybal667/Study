@@ -71,7 +71,7 @@ export default function PdfViewer({
       >
         <div style={{ fontSize: '48px' }}>📄</div>
         <div style={{ color: 'white', opacity: 0.7 }}>No PDF loaded yet</div>
-       <label
+        <label
           data-tour="pdf-upload-button"
           onClick={() => onUploadIntent?.()}
           style={{
@@ -91,9 +91,9 @@ export default function PdfViewer({
   }
 
   return (
-    <div data-tour="pdf-viewer" style={{ display: 'block', width: '100%' }}>
-       <style>{textLayerFix}</style>
-       <style>{highlightSelectionStyle}</style>
+    <div data-tour="pdf-viewer" className={highlightMode ? 'highlight-mode-active' : ''} style={{ display: 'block', width: '100%' }}>
+      <style>{textLayerFix}</style>
+      <style>{highlightSelectionStyle}</style>
       <Document
         file={pdfUrl}
         onLoadSuccess={async (pdf) => {
@@ -153,9 +153,9 @@ export default function PdfViewer({
                               position: 'absolute',
                               left: `${(lastRect.xPct + lastRect.wPct) * 100}%`,
                               top: `${lastRect.yPct * 100}%`,
-                              transform: 'translate(4px, -4px)',
+                              transform: 'translate(-4px, -10px)',
                               cursor: 'pointer',
-                              fontSize: '16px',
+                              fontSize: '11px',
                               zIndex: 10,
                             }}
                           >
