@@ -1,6 +1,6 @@
 'use client'
 
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+import { PDFDocument, PDFName, rgb, StandardFonts, PDFPage } from 'pdf-lib'
 
 interface HighlightRect {
     xPct: number
@@ -35,57 +35,125 @@ export default function NotesExportPreview({
 
         try {
             const response = await fetch(pdfUrl)
-
             if (!response.ok) {
                 throw new Error('Failed to load original PDF')
             }
 
             const originalPdfBytes = await response.arrayBuffer()
             const originalPdf = await PDFDocument.load(originalPdfBytes)
-
             const pdfDoc = await PDFDocument.create()
 
             const copiedPages = await pdfDoc.copyPages(
                 originalPdf,
                 originalPdf.getPageIndices()
             )
+            copiedPages.forEach((page) => pdfDoc.addPage(page))
 
-            copiedPages.forEach((page) => {
-                pdfDoc.addPage(page)
-            })
+            const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
 
-            const font = await pdfDoc.embedFont(
-                StandardFonts.Helvetica
-            )
+            const notesWithText = highlights.filter((h) => h.note)
 
-            const notesWithText = highlights.filter(
-                (highlight) => highlight.note
-            )
+            const wrapText = (text: string, size: number, maxWidth: number) => {
+                const words = text.split(' ')
+                const lines: string[] = []
+                let line = ''
+                for (const word of words) {
+                    const test = line ? `${line} ${word}` : word
+                    if (font.widthOfTextAtSize(test, size) > maxWidth) {
+                        lines.push(line)
+                        line = word
+                    } else {
+                        line = test
+                    }
+                }
+                if (line) lines.push(line)
+                return lines
+            }
 
-            // Add highlights and note numbers to original pages.
+            // Records where each note ended up (which page + y position),
+            // so the marker on the highlight page can link straight to it.
+            const destinations = new Map<number, { page: PDFPage; y: number }>()
+
+            // ---------- 1. Build the Notes page(s) first ----------
+            if (notesWithText.length > 0) {
+                let notesPage = pdfDoc.addPage()
+                const bottomMargin = 50
+                let currentY = notesPage.getSize().height - 95
+
+                notesPage.drawText('Notes', {
+                    x: 50,
+                    y: notesPage.getSize().height - 60,
+                    size: 18,
+                    font,
+                    color: rgb(0.1, 0.1, 0.1),
+                })
+
+                notesWithText.forEach((highlight, index) => {
+                    const noteNumber = index + 1
+                    const cleanHighlightedText = highlight.highlighted_text
+                        .replace(/\s+/g, ' ')
+                        .trim()
+
+                    const heading = `[${noteNumber}] Page ${highlight.page_number} - ${cleanHighlightedText}`
+                    const headingLines = wrapText(heading, 10, 450)
+                    const noteLines = wrapText(highlight.note || '', 9, 450)
+
+                    const entryHeight =
+                        headingLines.length * 14 + 4 + noteLines.length * 12 + 20
+
+                    // Start a fresh Notes page if this entry won't fit.
+                    if (currentY - entryHeight < bottomMargin) {
+                        notesPage = pdfDoc.addPage()
+                        currentY = notesPage.getSize().height - 60
+                    }
+
+                    // This is where the [n] link on the highlight page will jump to.
+                    destinations.set(highlight.highlight_id, {
+                        page: notesPage,
+                        y: currentY + 10,
+                    })
+
+                    headingLines.forEach((line) => {
+                        notesPage.drawText(line, {
+                            x: 50,
+                            y: currentY,
+                            size: 10,
+                            font,
+                            color: rgb(0.1, 0.1, 0.1),
+                        })
+                        currentY -= 14
+                    })
+
+                    currentY -= 4
+
+                    noteLines.forEach((line) => {
+                        notesPage.drawText(line, {
+                            x: 65,
+                            y: currentY,
+                            size: 9,
+                            font,
+                            color: rgb(0.2, 0.2, 0.2),
+                        })
+                        currentY -= 12
+                    })
+
+                    currentY -= 20
+                })
+            }
+
+            // ---------- 2. Draw highlights + clickable [n] markers ----------
             for (const highlight of highlights) {
                 const pageIndex = highlight.page_number - 1
-
-                if (
-                    pageIndex < 0 ||
-                    pageIndex >= pdfDoc.getPageCount()
-                ) {
-                    continue
-                }
+                if (pageIndex < 0 || pageIndex >= pdfDoc.getPageCount()) continue
 
                 const page = pdfDoc.getPage(pageIndex)
                 const { width, height } = page.getSize()
 
-                // Draw green highlights.
                 for (const rect of highlight.rects) {
                     const x = rect.xPct * width
                     const rectWidth = rect.wPct * width
                     const rectHeight = rect.hPct * height
-
-                    const y =
-                        height -
-                        rect.yPct * height -
-                        rectHeight
+                    const y = height - rect.yPct * height - rectHeight
 
                     page.drawRectangle({
                         x,
@@ -97,163 +165,74 @@ export default function NotesExportPreview({
                     })
                 }
 
-                // Draw a small note number beside highlights
-                // that have a saved note.
-                if (
-                    highlight.note &&
-                    highlight.rects.length > 0
-                ) {
+                if (highlight.note && highlight.rects.length > 0) {
                     const noteNumber =
                         notesWithText.findIndex(
-                            (item) =>
-                                item.highlight_id ===
-                                highlight.highlight_id
+                            (item) => item.highlight_id === highlight.highlight_id
                         ) + 1
 
-                    const lastRect =
-                        highlight.rects[
-                        highlight.rects.length - 1
-                        ]
+                    const lastRect = highlight.rects[highlight.rects.length - 1]
+                    const highlightRight = lastRect.xPct * width + lastRect.wPct * width
+                    const highlightTop = height - lastRect.yPct * height
 
-                    const highlightRight =
-                        lastRect.xPct * width +
-                        lastRect.wPct * width
+                    const markerX = Math.min(highlightRight - 2, width - 20)
+                    const markerY = Math.min(highlightTop + 2, height - 10)
+                    const markerLabel = `[${noteNumber}]`
+                    const markerWidth = font.widthOfTextAtSize(markerLabel, 7)
 
-                    const highlightTop =
-                        height -
-                        lastRect.yPct * height
-
-                    const markerX = Math.min(
-                        highlightRight - 2,
-                        width - 20
-                    )
-
-                    const markerY = Math.min(
-                        highlightTop + 2,
-                        height - 10
-                    )
-
-                    page.drawText(`[${noteNumber}]`, {
+                    // Draw it in a link-like color so it visually reads as clickable.
+                    page.drawText(markerLabel, {
                         x: markerX,
                         y: markerY,
                         size: 7,
                         font,
-                        color: rgb(0.2, 0.2, 0.2),
+                        color: rgb(0.1, 0.35, 0.85),
                     })
+
+                    // Attach an actual clickable link that jumps to the note.
+                    const dest = destinations.get(highlight.highlight_id)
+                    if (dest) {
+                        const linkAnnotation = pdfDoc.context.obj({
+                            Type: 'Annot',
+                            Subtype: 'Link',
+                            Rect: [
+                                markerX - 2,
+                                markerY - 2,
+                                markerX + markerWidth + 2,
+                                markerY + 9,
+                            ],
+                            Border: [0, 0, 0],
+                            Dest: [dest.page.ref, 'XYZ', 0, dest.y, 0],
+                        })
+
+                        const linkRef = pdfDoc.context.register(linkAnnotation)
+                        const existingAnnots = page.node.Annots()
+
+                        if (existingAnnots) {
+                            existingAnnots.push(linkRef)
+                        } else {
+                            page.node.set(
+                                PDFName.of('Annots'),
+                                pdfDoc.context.obj([linkRef])
+                            )
+                        }
+                    }
                 }
             }
 
-            // Add a separate Notes page.
-            if (notesWithText.length > 0) {
-                const notesPage = pdfDoc.addPage()
-                const { height } = notesPage.getSize()
+            const modifiedPdfBytes = await pdfDoc.save({ useObjectStreams: false })
 
-                notesPage.drawText('Notes', {
-                    x: 50,
-                    y: height - 60,
-                    size: 18,
-                    font,
-                    color: rgb(0.1, 0.1, 0.1),
-                })
-
-                let currentY = height - 95
-
-                notesWithText.forEach(
-                    (highlight, index) => {
-                        const noteNumber = index + 1
-
-                        const cleanHighlightedText =
-                            highlight.highlighted_text.replace(/\s+/g, ' ').trim()
-
-                        const heading =
-                            `[${noteNumber}] Page ${highlight.page_number} - ${cleanHighlightedText}`
-
-                        const maxWidth = 450
-                        const headingFontSize = 10
-                        const words = heading.split(' ')
-                        const headingLines: string[] = []
-
-                        let currentLine = ''
-
-                        for (const word of words) {
-                            const testLine =
-                                currentLine
-                                    ? `${currentLine} ${word}`
-                                    : word
-
-                            const lineWidth =
-                                font.widthOfTextAtSize(
-                                    testLine,
-                                    headingFontSize
-                                )
-
-                            if (lineWidth > maxWidth) {
-                                headingLines.push(currentLine)
-                                currentLine = word
-                            } else {
-                                currentLine = testLine
-                            }
-                        }
-
-                        if (currentLine) {
-                            headingLines.push(currentLine)
-                        }
-
-                        headingLines.forEach((line) => {
-                            notesPage.drawText(line, {
-                                x: 50,
-                                y: currentY,
-                                size: headingFontSize,
-                                font,
-                                color: rgb(0.1, 0.1, 0.1),
-                            })
-
-                            currentY -= 14
-                        })
-
-                        currentY -= 4
-
-                        notesPage.drawText(
-                            highlight.note || '',
-                            {
-                                x: 65,
-                                y: currentY,
-                                size: 9,
-                                font,
-                                color: rgb(0.2, 0.2, 0.2),
-                            }
-                        )
-
-                        currentY -= 28
-                    }
-                )
-            }
-
-            // Save after everything has been added.
-            const modifiedPdfBytes = await pdfDoc.save({
-                useObjectStreams: false,
-            })
-
-            const pdfBuffer = new ArrayBuffer(
-                modifiedPdfBytes.byteLength
-            )
-
+            const pdfBuffer = new ArrayBuffer(modifiedPdfBytes.byteLength)
             new Uint8Array(pdfBuffer).set(modifiedPdfBytes)
 
-            const blob = new Blob([pdfBuffer], {
-                type: 'application/pdf',
-            })
-
+            const blob = new Blob([pdfBuffer], { type: 'application/pdf' })
             const url = URL.createObjectURL(blob)
             const link = document.createElement('a')
 
-            const originalName =
-                pdfFileName || 'document.pdf'
-
-            const baseName =
-                originalName.toLowerCase().endsWith('.pdf')
-                    ? originalName.slice(0, -4)
-                    : originalName
+            const originalName = pdfFileName || 'document.pdf'
+            const baseName = originalName.toLowerCase().endsWith('.pdf')
+                ? originalName.slice(0, -4)
+                : originalName
 
             link.href = url
             link.download = `${baseName}-highlighted.pdf`
@@ -262,14 +241,9 @@ export default function NotesExportPreview({
             link.click()
             link.remove()
 
-            setTimeout(() => {
-                URL.revokeObjectURL(url)
-            }, 1000)
+            setTimeout(() => URL.revokeObjectURL(url), 1000)
         } catch (error) {
-            console.error(
-                'Failed to export highlighted PDF:',
-                error
-            )
+            console.error('Failed to export highlighted PDF:', error)
         }
     }
 
@@ -301,39 +275,23 @@ export default function NotesExportPreview({
                 }}
             >
                 <h2>Export PDF</h2>
-
                 <p>
-                    This will download the original PDF with your
-                    saved highlights and notes added.
+                    This will download the original PDF with your saved
+                    highlights and clickable notes added.
                 </p>
 
                 {highlights.length === 0 && (
-                    <p>
-                        No saved highlights or notes for this
-                        document.
-                    </p>
+                    <p>No saved highlights or notes for this document.</p>
                 )}
 
-                <div
-                    style={{
-                        display: 'flex',
-                        gap: '10px',
-                        marginTop: '20px',
-                    }}
-                >
+                <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
                     <button
                         onClick={handleDownloadPdf}
-                        disabled={
-                            !pdfUrl ||
-                            highlights.length === 0
-                        }
+                        disabled={!pdfUrl || highlights.length === 0}
                     >
                         Download PDF
                     </button>
-
-                    <button onClick={onClose}>
-                        Close
-                    </button>
+                    <button onClick={onClose}>Close</button>
                 </div>
             </div>
         </div>
