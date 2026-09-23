@@ -29,6 +29,9 @@ export default function AuthCallback() {
         const email = user.email || ''
         const fullName = user.user_metadata?.full_name || 'Unknown'
 
+        const hasEmailPasswordIdentity = user.identities?.some(
+          (identity) => identity.provider === 'email'
+        ) ?? false
 
         const studentNum = parseInt(email.split('@')[0])
 
@@ -63,7 +66,7 @@ export default function AuthCallback() {
               full_name: fullName,
               degree_id: null,
               current_year: null,
-              password_set: false
+              password_set: hasEmailPasswordIdentity
             })
 
           if (insertError) {
@@ -72,11 +75,16 @@ export default function AuthCallback() {
             return
           }
 
-          setShowPasswordForm(true)
+          if (!hasEmailPasswordIdentity) {
+            setShowPasswordForm(true)
+            return
+          }
+
+          await handleExistingUser(email, fullName, studentNum)
           return
         }
 
-        if (!student.password_set) {
+        if (!student.password_set && !hasEmailPasswordIdentity) {
           setShowPasswordForm(true)
           return
         }

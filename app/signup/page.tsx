@@ -86,7 +86,8 @@ export default function SignupPage() {
           full_name: fullName,
           email: email,  
           degree_id: null,           
-          current_year: null        
+          current_year: null,
+          password_set: true
         }])
 
       if (dbError) {
