@@ -22,6 +22,7 @@ import { useNoteSuggestion } from '@/hooks/useNoteSuggestion'
 import SaveToNotePopup from '@/components/SaveToNotePopup'
 import TourTooltip from '@/components/TourTooltip'
 import NotesExportPreview from '@/components/NotesExportPreview'
+import NotesOnlyExport from '@/components/NotesOnlyExport'
 import { useTour } from '@/hooks/useTour'
 
 
@@ -45,6 +46,7 @@ export default function StudyPage() {
   const [aiSidebarOpen, setAiSidebarOpen] = useState(false)
   const [aiSidebarWidth, setAiSidebarWidth] = useState(AI_SIDEBAR_DEFAULT_WIDTH)
   const [showNotesExport, setShowNotesExport] = useState(false)
+  const [showNotesOnly, setShowNotesOnly] = useState(false)
   const { showNav, showPdfControls, openNav, closeNavDelayed, openPdfControls, closePdfControlsDelayed } = useHoverPanels()
   const { studentNumber, moduleId, documents, loadDocuments } = useStudentContext()
 
@@ -177,6 +179,7 @@ export default function StudyPage() {
           showNav={showNav || forceNavOpen}
           forceImportOpen={forceImportOpen}
           onUploadIntent={dismissBlockingStep}
+          onNotesClick={() => setShowNotesOnly(true)}
           openNav={openNav}
           closeNavDelayed={closeNavDelayed}
           documents={documents}
@@ -342,9 +345,17 @@ export default function StudyPage() {
       {showNotesExport && (
         <NotesExportPreview
           highlights={highlights}
-          pdfFileName={pdfFile?.name} 
-          pdfUrl={pdfUrl}  
+          pdfFileName={pdfFile?.name}
+          pdfUrl={pdfUrl}
           onClose={() => setShowNotesExport(false)}
+        />
+      )}
+
+      {showNotesOnly && (
+        <NotesOnlyExport
+          highlights={highlights}
+          pdfFileName={pdfFile?.name}
+          onClose={() => setShowNotesOnly(false)}
         />
       )}
 

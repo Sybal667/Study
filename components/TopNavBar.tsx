@@ -15,6 +15,7 @@ interface TopNavBarProps {
   onDeleteDocument: (doc: any) => void
   forceImportOpen?: boolean
   onUploadIntent?: () => void
+  onNotesClick: () => void
 }
 
 const MAX_DOCUMENTS_PER_MODULE = 3
@@ -29,6 +30,7 @@ export default function TopNavBar({
   onDeleteDocument,
   forceImportOpen = false,
   onUploadIntent,
+  onNotesClick,
 
 }: TopNavBarProps) {
   const [importOpen, setImportOpen] = useState(false)
@@ -116,7 +118,7 @@ export default function TopNavBar({
                 zIndex: 999,
               }}
             >
-         <button
+              <button
                 data-tour="top-nav-import-new"
                 style={{
                   ...navButtonStyle,
@@ -185,7 +187,7 @@ export default function TopNavBar({
               style={{
                 position: 'absolute',
                 top: '40px',
-                left: '0', 
+                left: '0',
                 backgroundColor: 'rgba(0,0,0,0.95)',
                 border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: '12px',
@@ -212,14 +214,14 @@ export default function TopNavBar({
           )}
         </div>
 
-        <button data-tour="top-nav-notes" style={navButtonStyle}>📝 Notes</button>
+        <button data-tour="top-nav-notes" style={navButtonStyle} onClick={onNotesClick}>📝 Notes</button>
         <button data-tour="top-nav-change-module" style={navButtonStyle} onClick={() => router.push('/SelectModule')}>
           🔁 Change Module
         </button>
       </div>
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-<button
+        <button
           data-tour="top-nav-profile"
           style={{
             ...navButtonStyle,
