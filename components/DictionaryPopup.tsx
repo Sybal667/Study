@@ -26,36 +26,45 @@ export default function DictionaryPopup({ selection, onClose }: DictionaryPopupP
   const [error, setError] = useState(false);
   const popupRef = useRef<HTMLDivElement>(null);
 
-
-
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchDefinition = async () => {
       try {
         setLoading(true);
+        setError(false);
+
         const response = await fetch(
-          `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(selection.word)}`
+          `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(selection.word)}`,
+          { signal: controller.signal }
         );
-        
+
         if (!response.ok) {
-          if (response.status === 404) {
-            setError(true);
-            return;
-          }
-          throw new Error('Failed to fetch definition');
+          setError(true);
+          return;
         }
-        
+
         const data = await response.json();
         setDefinitions(data[0]);
-        setError(false);
-      } catch (err) {
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          // component unmounted or word changed mid-fetch — not a real error
+          return;
+        }
         console.error('Dictionary fetch error:', err);
         setError(true);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchDefinition();
+
+    return () => {
+      controller.abort();
+    };
   }, [selection.word]);
 
   const popupStyle: React.CSSProperties = {
@@ -84,28 +93,26 @@ export default function DictionaryPopup({ selection, onClose }: DictionaryPopupP
 
   return (
     <div ref={popupRef} style={popupStyle}>
-      {definitions ? (
-        <div>
-          <div style={{ fontWeight: 600, marginBottom: 4, color: '#fff' }}>
-            {definitions.word}
-          </div>
-          <div style={{ fontSize: '12px', color: '#888', marginBottom: 8 }}>
-            {definitions.meanings?.[0]?.partOfSpeech || ''}
-          </div>
-<div style={{ fontSize: '13px', color: '#d0d0d0' }}>
-            {definitions.meanings?.slice(0, 3).map((meaning, idx) => (
-              <div key={idx} style={{ marginBottom: 6 }}>
-                {meaning.definitions?.[0]?.definition || ''}
-                {meaning.definitions?.[0]?.example && (
-                  <div style={{ color: '#888', fontSize: '12px', fontStyle: 'italic', marginTop: 2 }}>
-                    "{meaning.definitions[0].example}"
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+      <div>
+        <div style={{ fontWeight: 600, marginBottom: 4, color: '#fff' }}>
+          {definitions.word}
         </div>
-      ) : null}
+        <div style={{ fontSize: '12px', color: '#888', marginBottom: 8 }}>
+          {definitions.meanings?.[0]?.partOfSpeech || ''}
+        </div>
+        <div style={{ fontSize: '13px', color: '#d0d0d0' }}>
+          {definitions.meanings?.slice(0, 3).map((meaning, idx) => (
+            <div key={idx} style={{ marginBottom: 6 }}>
+              {meaning.definitions?.[0]?.definition || ''}
+              {meaning.definitions?.[0]?.example && (
+                <div style={{ color: '#888', fontSize: '12px', fontStyle: 'italic', marginTop: 2 }}>
+                  "{meaning.definitions[0].example}"
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
-} 
+}

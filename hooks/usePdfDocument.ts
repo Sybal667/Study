@@ -261,13 +261,22 @@ const saveZoomToDB = async (value: number) => {
     restorePdfState()
   }, [pdfUrl, numPages])
 
-  useEffect(() => {
-    const loadPdfWorker = async () => {
+useEffect(() => {
+  let cancelled = false
+  const loadPdfWorker = async () => {
+    try {
       const { pdfjs } = await import('react-pdf')
+      if (cancelled) return
       pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
+    } catch (err) {
+      console.error('Failed to load PDF worker:', err)
     }
-    loadPdfWorker()
-  }, [])
+  }
+  loadPdfWorker()
+  return () => {
+    cancelled = true
+  }
+}, [])
 
   useEffect(() => {
     if (!pdfReady) return
@@ -275,7 +284,7 @@ const saveZoomToDB = async (value: number) => {
 
     const container = pdfContainerRef.current
 
-    const scrollValue = Number(0) //will set this later in the next commmit
+    const scrollValue = Number(0) 
 
     requestAnimationFrame(() => {
       container.scrollTop = container.scrollHeight * scrollValue

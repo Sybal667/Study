@@ -115,17 +115,23 @@ export default function PdfViewer({
                   position: 'relative',
                 }}
               >
-                <Page
-                  pageNumber={index + 1}
-                  scale={scale}
-                  rotate={rotation}
-                  renderTextLayer={true}
-                  renderAnnotationLayer={true}
-                  loading={<div style={{ color: 'white', opacity: 0.7, padding: '20px' }}>Loading page...</div>}
-                  onRenderSuccess={() => {
-                    updatePage(index + 1)
-                  }}
-                />
+              <Page
+  pageNumber={index + 1}
+  scale={scale}
+  rotate={rotation}
+  renderTextLayer={true}
+  renderAnnotationLayer={true}
+  loading={<div style={{ color: 'white', opacity: 0.7, padding: '20px' }}>Loading page...</div>}
+  onRenderSuccess={() => {
+    updatePage(index + 1)
+  }}
+  onRenderError={(error) => {
+    if (error?.name === 'RenderingCancelledException') {
+      return
+    }
+    console.error(`Error rendering page ${index + 1}:`, error)
+  }}
+/>
                 {highlights
                   .filter((h) => h.page_number === index + 1)
                   .map((h) => {
