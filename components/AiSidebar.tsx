@@ -220,7 +220,7 @@ export default function AiSidebar({ pdfUrl, pdfId, isOpen, onOpenChange, width, 
               )}
             </>
           ) : (
-            <AiVideosTab />
+            <AiVideosTab pdfId={pdfId} currentPage={currentPage} totalPages={totalPages} />
           )}
         </div>
       )}

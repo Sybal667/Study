@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
-import { generateExplanation, getOrRefreshPracticeFileUri  } from '@/lib/aiProviders/practiceGemini'
+import { generateExplanation, getOrRefreshPracticeFileUri } from '@/lib/aiProviders/practiceGemini'
 
 export async function POST(request: Request) {
   try {
@@ -67,6 +67,13 @@ export async function POST(request: Request) {
         return NextResponse.json(
           { error: 'Daily AI limit reached — try again tomorrow.' },
           { status: 429 }
+        )
+      }
+
+      if (err instanceof Error && err.message === 'MODEL_OVERLOADED') {
+        return NextResponse.json(
+          { error: 'Gemini is under heavy load right now — try again in a minute or two.' },
+          { status: 503 }
         )
       }
 
