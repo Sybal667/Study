@@ -1,7 +1,7 @@
 import { GEMINI_API_URL, uploadFileToGemini, type GeminiModel } from './gemini'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 
-export const PRACTICE_MODEL: GeminiModel = 'gemini-3.1-pro-preview'
+export const PRACTICE_MODEL: GeminiModel = 'gemini-3.5-flash'
 
 export async function getOrRefreshPracticeFileUri(pdfId: number, fileUrl: string): Promise<string> {
   if (!supabaseAdmin) {
@@ -124,6 +124,10 @@ Respond with ONLY a raw JSON array, no markdown fences, no extra text, in this e
           continue
         }
 
+        if (res.status === 503) {
+          throw new Error('MODEL_OVERLOADED')
+        }
+
         throw new Error(`Gemini API error (${res.status}): ${errText}`)
       }
 
@@ -216,6 +220,10 @@ Explain, in 2-4 sentences, why "${correctAnswer}" is the correct answer, using t
           lastError = new Error(`Gemini API error (${res.status}): ${errText}`)
           await new Promise((r) => setTimeout(r, attempt * 1000))
           continue
+        }
+
+        if (res.status === 503) {
+          throw new Error('MODEL_OVERLOADED')
         }
 
         throw new Error(`Gemini API error (${res.status}): ${errText}`)

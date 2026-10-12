@@ -29,9 +29,10 @@ export default function AuthCallback() {
         const email = user.email || ''
         const fullName = user.user_metadata?.full_name || 'Unknown'
 
-        const hasEmailPasswordIdentity = user.identities?.some(
-          (identity) => identity.provider === 'email'
-        ) ?? false
+        const hasPasswordInAuth =
+          user.user_metadata?.password_set === true ||
+          (user.identities?.some((identity) => identity.provider === 'email') ?? false)
+
 
         const studentNum = parseInt(email.split('@')[0])
 
@@ -66,7 +67,7 @@ export default function AuthCallback() {
               full_name: fullName,
               degree_id: null,
               current_year: null,
-              password_set: hasEmailPasswordIdentity
+              password_set: hasPasswordInAuth
             })
 
           if (insertError) {
@@ -75,7 +76,7 @@ export default function AuthCallback() {
             return
           }
 
-          if (!hasEmailPasswordIdentity) {
+          if (!hasPasswordInAuth) {
             setShowPasswordForm(true)
             return
           }
@@ -84,9 +85,20 @@ export default function AuthCallback() {
           return
         }
 
-        if (!student.password_set && !hasEmailPasswordIdentity) {
+        if (!student.password_set && !hasPasswordInAuth) {
           setShowPasswordForm(true)
           return
+        }
+
+        if (!student.password_set && hasPasswordInAuth) {
+          const { error: healError } = await supabase
+            .from('students')
+            .update({ password_set: true })
+            .eq('student_number', studentNum)
+
+          if (healError) {
+            console.error('Failed to sync password_set:', healError)
+          }
         }
 
         await handleExistingUser(email, fullName, studentNum, student)
@@ -180,20 +192,39 @@ export default function AuthCallback() {
     }
 
     const { error: updateError } = await supabase.auth.updateUser({
-      password: password
+      password: password,
+      data: { password_set: true }
     })
 
     if (updateError) {
-      console.error('Password update error:', updateError)
-      setMessage(`Error: ${updateError.message}`)
-      setLoading(false)
-      return
+      const sameAsOldPassword = updateError.message
+        .toLowerCase()
+        .includes('different from the old password')
+
+      if (!sameAsOldPassword) {
+        console.error('Password update error:', updateError)
+        setMessage(`Error: ${updateError.message}`)
+        setLoading(false)
+        return
+      }
+
+      const { error: metaError } = await supabase.auth.updateUser({
+        data: { password_set: true }
+      })
+
+      if (metaError) {
+        console.error('Failed to save password_set metadata:', metaError)
+      }
     }
 
-    await supabase
+    const { error: flagError } = await supabase
       .from('students')
       .update({ password_set: true })
       .eq('student_number', studentNumber)
+
+    if (flagError) {
+      console.error('Failed to save password_set flag:', flagError)
+    }
 
     if (userEmail && studentNumber) {
       await handleExistingUser(userEmail, userFullName, studentNumber)

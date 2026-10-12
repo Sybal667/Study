@@ -24,9 +24,9 @@ export const AI_MODELS: AiModelOption[] = [
     supportsFileInput: true,
   },
   {
-    id: 'llama-3.3-70b-versatile',
+    id: 'openai/gpt-oss-120b',
     provider: 'groq',
-    label: 'Groq Llama 3.3',
+    label: 'Groq GPT-OSS 120B',
     description: 'Very fast, text-only (reads extracted PDF text, not diagrams)',
     supportsFileInput: false,
   },
