@@ -7,6 +7,11 @@ export interface VideoRecommendation {
   thumbnail_url: string | null
   description: string
   duration_seconds: number | null
+  match_percent: number | null
+  keyword_percent: number | null
+  semantic_percent: number | null
+  best_start_seconds: number | null
+  best_end_seconds: number | null
   topic: string
 }
 

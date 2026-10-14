@@ -17,9 +17,16 @@ function formatDuration(seconds: number | null): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+function matchColor(percent: number): string {
+  if (percent >= 60) return '#4ade80'
+  if (percent >= 35) return '#facc15'
+  return '#f87171'
+}
+
 export default function AiVideosTab({ pdfId, currentPage, totalPages }: AiVideosTabProps) {
   const { bucket, batches, loading, generating, error, generateBatch } = useVideos(pdfId, currentPage, totalPages)
   const [expandedVideoId, setExpandedVideoId] = useState<string | null>(null)
+  const [playerStart, setPlayerStart] = useState<number>(0)
 
   if (!pdfId) {
     return (
@@ -37,7 +44,9 @@ export default function AiVideosTab({ pdfId, currentPage, totalPages }: AiVideos
     )
   }
 
-  const allVideos: VideoRecommendation[] = batches.flatMap((batch) => batch.pdf_video_recommendations)
+  const allVideos: VideoRecommendation[] = batches
+    .flatMap((batch) => batch.pdf_video_recommendations)
+    .sort((a, b) => (b.match_percent ?? -1) - (a.match_percent ?? -1))
 
   return (
     <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -70,7 +79,10 @@ export default function AiVideosTab({ pdfId, currentPage, totalPages }: AiVideos
               cursor: 'pointer',
               color: 'white',
             }}
-            onClick={() => setExpandedVideoId(isExpanded ? null : video.video_id)}
+            onClick={() => {
+              setPlayerStart(0)
+              setExpandedVideoId(isExpanded ? null : video.video_id)
+            }}
             onMouseEnter={(e) => {
               e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'
             }}
@@ -81,7 +93,8 @@ export default function AiVideosTab({ pdfId, currentPage, totalPages }: AiVideos
             {isExpanded ? (
               <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, marginBottom: '10px', borderRadius: '6px', overflow: 'hidden' }}>
                 <iframe
-                  src={`https://www.youtube.com/embed/${video.video_id}?autoplay=1`}
+                  key={`${video.video_id}-${playerStart}`}
+                  src={`https://www.youtube.com/embed/${video.video_id}?autoplay=1&start=${playerStart}`}
                   title={video.title}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
@@ -128,6 +141,64 @@ export default function AiVideosTab({ pdfId, currentPage, totalPages }: AiVideos
                 <div style={{ fontSize: '12px', opacity: 0.5, marginTop: '4px' }}>
                   📌 {video.topic}
                 </div>
+                <div
+                  title={
+                    video.match_percent !== null
+                      ? `Overall match: keywords found ${video.keyword_percent ?? '—'}%${
+                          video.semantic_percent !== null ? `, meaning similarity ${video.semantic_percent}%` : ''
+                        }. Based on pages ${bucket?.bucket_start_page}–${bucket?.bucket_end_page} compared with the video's captions.`
+                      : 'No captions were available for this video, so a match could not be calculated.'
+                  }
+                  style={{ marginTop: '8px' }}
+                >
+                  {video.match_percent !== null ? (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                        <span style={{ opacity: 0.7 }}>🎯 Matches your text</span>
+                        <span style={{ fontWeight: 'bold', color: matchColor(video.match_percent) }}>
+                          {video.match_percent}%
+                        </span>
+                      </div>
+                      <div style={{ height: '4px', borderRadius: '999px', backgroundColor: 'rgba(255,255,255,0.12)', overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            width: `${video.match_percent}%`,
+                            height: '100%',
+                            borderRadius: '999px',
+                            backgroundColor: matchColor(video.match_percent),
+                          }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', gap: '12px', fontSize: '11px', opacity: 0.55, marginTop: '5px', flexWrap: 'wrap' }}>
+                        {video.keyword_percent !== null && <span>Keywords {video.keyword_percent}%</span>}
+                        {video.semantic_percent !== null && <span>Meaning {video.semantic_percent}%</span>}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: '12px', opacity: 0.5 }}>🎯 Match unavailable (no captions)</div>
+                  )}
+                </div>
+                {video.best_start_seconds !== null && video.best_end_seconds !== null && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setPlayerStart(video.best_start_seconds ?? 0)
+                      setExpandedVideoId(video.video_id)
+                    }}
+                    style={{
+                      marginTop: '8px',
+                      padding: '6px 10px',
+                      fontSize: '12px',
+                      color: 'white',
+                      cursor: 'pointer',
+                      backgroundColor: 'rgba(30, 58, 138, 0.6)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: '6px',
+                    }}
+                  >
+                    ▶ Best part: {formatDuration(video.best_start_seconds)} – {formatDuration(video.best_end_seconds)}
+                  </button>
+                )}
               </div>
             </div>
           </div>

@@ -6,7 +6,7 @@ export interface PracticeBucket {
 export function getPracticeBucket(page: number, totalPages: number): PracticeBucket {
   const bucketStart = Math.floor((page - 1) / 3) * 3 + 1
   const naturalEnd = bucketStart + 2
-  const bucketEnd = Math.min(naturalEnd, page, totalPages)
+  const bucketEnd = Math.min(naturalEnd, Math.max(page, 2), totalPages)
 
   return {
     bucket_start_page: bucketStart,

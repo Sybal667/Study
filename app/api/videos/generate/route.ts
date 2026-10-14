@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { getOrRefreshPracticeFileUri, PRACTICE_MODEL } from '@/lib/aiProviders/practiceGemini'
 import { generateVideoTopics } from '@/lib/aiProviders/videoTopics'
 import { searchEducationalVideos } from '@/lib/aiProviders/youtubeVideos'
+import { extractPdfPages, scoreVideos, type MatchResult } from '@/lib/aiProviders/videoMatch'
 
 export async function POST(request: Request) {
   try {
@@ -71,6 +72,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No matching videos were found' }, { status: 404 })
     }
 
+    let matchScores = new Map<string, MatchResult>()
+
+    try {
+      const pages = await extractPdfPages(pdfRow.file_url, bucket_end_page)
+      matchScores = await scoreVideos(
+        videos.map((v) => ({ id: v.id, durationSeconds: v.durationSeconds })),
+        pages,
+        bucket_start_page,
+        bucket_end_page
+      )
+
+      matchScores.forEach((score, id) => {
+        console.log('[video-match]', id, JSON.stringify(score))
+      })
+    } catch (err) {
+      console.error('⚠️ Video match scoring failed:', err)
+    }
+
     const { data: batchRow, error: batchErr } = await supabaseAdmin
       .from('pdf_video_batches')
       .insert({
@@ -98,10 +117,15 @@ export async function POST(request: Request) {
           thumbnail_url: v.thumbnail,
           description: v.description,
           duration_seconds: v.durationSeconds,
+          match_percent: matchScores.get(v.id)?.matchPercent ?? null,
+          keyword_percent: matchScores.get(v.id)?.keywordPercent ?? null,
+          semantic_percent: matchScores.get(v.id)?.semanticPercent ?? null,
+          best_start_seconds: matchScores.get(v.id)?.bestStartSeconds ?? null,
+          best_end_seconds: matchScores.get(v.id)?.bestEndSeconds ?? null,
           topic: v.topic,
         }))
       )
-      .select('video_id, title, channel_title, thumbnail_url, description, duration_seconds, topic')
+      .select('video_id, title, channel_title, thumbnail_url, description, duration_seconds, match_percent, keyword_percent, semantic_percent, best_start_seconds, best_end_seconds, topic')
 
     if (videosErr || !videoRows) {
       console.error('❌ Failed to save video recommendations:', videosErr)

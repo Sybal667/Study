@@ -40,6 +40,11 @@ export async function GET(request: Request) {
           thumbnail_url,
           description,
           duration_seconds,
+          match_percent,
+          keyword_percent,
+          semantic_percent,
+          best_start_seconds,
+          best_end_seconds,
           topic
         )
       `

@@ -1,10 +1,24 @@
 'use client'
 
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 export default function HomePage() {
   const router = useRouter()
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (!params.get('error')) return
+
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        router.replace('/auth/callback')
+      } else {
+        router.replace('/logIn?error=auth-failed')
+      }
+    })
+  }, [])
 
   async function signInWithGoogle() {
     await supabase.auth.signInWithOAuth({

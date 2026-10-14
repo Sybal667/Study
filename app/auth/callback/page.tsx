@@ -28,7 +28,6 @@ export default function AuthCallback() {
 
         const email = user.email || ''
         const fullName = user.user_metadata?.full_name || 'Unknown'
-
         const hasPasswordInAuth =
           user.user_metadata?.password_set === true ||
           (user.identities?.some((identity) => identity.provider === 'email') ?? false)

@@ -27,6 +27,24 @@ export interface PracticeSet {
   pdf_practice_questions: PracticeQuestion[]
 }
 
+function toAttemptArray(value: unknown): PracticeAttempt[] {
+  if (Array.isArray(value)) return value as PracticeAttempt[]
+  if (value && typeof value === 'object') return [value as PracticeAttempt]
+  return []
+}
+
+function normalizeSet(raw: any): PracticeSet {
+  const questions = Array.isArray(raw?.pdf_practice_questions) ? raw.pdf_practice_questions : []
+
+  return {
+    ...raw,
+    pdf_practice_questions: questions.map((q: any) => ({
+      ...q,
+      pdf_practice_attempts: toAttemptArray(q?.pdf_practice_attempts),
+    })),
+  } as PracticeSet
+}
+
 export function usePractice(pdfId: number | null, currentPage: number, totalPages: number) {
   const [bucket, setBucket] = useState<{ bucket_start_page: number; bucket_end_page: number } | null>(null)
   const [sets, setSets] = useState<PracticeSet[]>([])
@@ -52,7 +70,7 @@ export function usePractice(pdfId: number | null, currentPage: number, totalPage
       }
 
       setBucket({ bucket_start_page: data.bucket_start_page, bucket_end_page: data.bucket_end_page })
-      setSets(data.sets ?? [])
+      setSets((data.sets ?? []).map(normalizeSet))
     } catch {
       setError('Failed to load practice sets')
     } finally {
@@ -87,8 +105,9 @@ export function usePractice(pdfId: number | null, currentPage: number, totalPage
         return
       }
 
-      setSets((prev) => [data, ...prev])
-      return data as PracticeSet
+      const normalized = normalizeSet(data)
+      setSets((prev) => [normalized, ...prev])
+      return normalized
     } catch {
       setError('Failed to generate practice set')
     } finally {
