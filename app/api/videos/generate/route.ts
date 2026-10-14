@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { createSupabaseServerClient } from '@/lib/supabaseServer'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { getOrRefreshPracticeFileUri, PRACTICE_MODEL } from '@/lib/aiProviders/practiceGemini'
 import { generateVideoTopics } from '@/lib/aiProviders/videoTopics'
@@ -7,17 +8,14 @@ import { extractPdfPages, scoreVideos, type MatchResult } from '@/lib/aiProvider
 
 export async function POST(request: Request) {
   try {
-    const { pdf_id, bucket_start_page, bucket_end_page } = (await request.json()) as {
-      pdf_id: number
-      bucket_start_page: number
-      bucket_end_page: number
-    }
+    const supabase = await createSupabaseServerClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
 
-    if (!pdf_id || !bucket_start_page || !bucket_end_page) {
-      return NextResponse.json(
-        { error: 'pdf_id, bucket_start_page and bucket_end_page are required' },
-        { status: 400 }
-      )
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     if (!supabaseAdmin) {
@@ -25,13 +23,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Database connection error' }, { status: 500 })
     }
 
-    const { data: pdfRow, error: pdfErr } = await supabaseAdmin
-      .from('student_pdfs')
-      .select('file_url')
-      .eq('pdf_id', pdf_id)
+    const { data: student, error: studentErr } = await supabaseAdmin
+      .from('students')
+      .select('student_number')
+      .eq('auth_user_id', user.id)
       .maybeSingle()
 
-    if (pdfErr || !pdfRow) {
+    if (studentErr || !student) {
+      console.error('❌ Failed to resolve authenticated student:', studentErr)
+      return NextResponse.json({ error: 'Student account not found' }, { status: 403 })
+    }
+
+    const body = await request.json()
+    const { pdf_id, bucket_start_page, bucket_end_page } = body
+
+    if (
+      !Number.isSafeInteger(pdf_id) ||
+      pdf_id <= 0 ||
+      !Number.isSafeInteger(bucket_start_page) ||
+      !Number.isSafeInteger(bucket_end_page) ||
+      bucket_start_page < 1 ||
+      bucket_end_page < bucket_start_page ||
+      bucket_end_page - bucket_start_page + 1 > 50
+    ) {
+      return NextResponse.json(
+        { error: 'Valid pdf_id and page range of at most 50 pages are required' },
+        { status: 400 }
+      )
+    }
+
+    const { data: pdfRow, error: pdfErr } = await supabaseAdmin
+      .from('student_pdfs')
+      .select('pdf_id, file_url')
+      .eq('pdf_id', pdf_id)
+      .eq('student_number', student.student_number)
+      .maybeSingle()
+
+    if (pdfErr) {
+      console.error('❌ Failed to verify PDF ownership:', pdfErr)
+      return NextResponse.json({ error: 'Failed to verify PDF ownership' }, { status: 500 })
+    }
+
+    if (!pdfRow) {
       return NextResponse.json({ error: 'PDF not found' }, { status: 404 })
     }
 
@@ -132,11 +165,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to save video results' }, { status: 500 })
     }
 
-    return NextResponse.json({
-      ...batchRow,
-      topics,
-      videos: videoRows,
-    })
+    return NextResponse.json(
+      {
+        ...batchRow,
+        topics,
+        videos: videoRows,
+      },
+      { headers: { 'Cache-Control': 'private, no-store' } }
+    )
   } catch (error) {
     console.error('❌ API error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

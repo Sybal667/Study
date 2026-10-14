@@ -1,56 +1,124 @@
+
 import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabaseAdmin' 
+import { createSupabaseServerClient } from '@/lib/supabaseServer'
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { streamMessage } from '@/lib/aiProviders/router'
 import type { ChatMessage } from '@/lib/aiProviders/gemini'
 
+const ALLOWED_MODELS = ['gemini-3.5-flash', 'gemini-3.1-pro-preview', 'openai/gpt-oss-120b']
+
 export async function POST(request: Request) {
   try {
-    const { pdf_id, message, model } = (await request.json()) as {
-      pdf_id: number
-      message: string
-      model: string
+    const supabase = await createSupabaseServerClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    if (!pdf_id || !message || !model) {
-      return NextResponse.json(
-        { error: 'pdf_id, message and model are required' },
-        { status: 400 }
-      )
-    }
-
-    
     if (!supabaseAdmin) {
-      console.error('❌ Supabase Admin client is not initialized')
       return NextResponse.json(
         { error: 'Database connection error' },
-        { status: 500 }
+        { status: 500 },
       )
     }
 
-   
-    const { data: pdfRow, error: pdfErr } = await supabaseAdmin
-      .from('student_pdfs')
-      .select('file_url')
-      .eq('pdf_id', pdf_id)
+    const { data: student, error: studentError } = await supabaseAdmin
+      .from('students')
+      .select('student_number')
+      .eq('auth_user_id', user.id)
       .maybeSingle()
 
-    console.log('🔍 pdfErr:', pdfErr)
-    console.log('🔍 pdfRow:', pdfRow)
+    if (studentError) {
+      console.error('Failed to resolve student:', studentError)
+      return NextResponse.json(
+        { error: 'Failed to verify student account' },
+        { status: 500 },
+      )
+    }
 
-    if (pdfErr || !pdfRow) {
+    if (!student) {
+      return NextResponse.json(
+        { error: 'Student account not linked' },
+        { status: 403 },
+      )
+    }
+
+    let body: {
+      pdf_id?: unknown
+      message?: unknown
+      model?: unknown
+    }
+
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid JSON body' },
+        { status: 400 },
+      )
+    }
+
+    const { pdf_id, message, model } = body
+    console.log('Chat validation values:', {
+  pdf_id,
+  pdf_id_type: typeof pdf_id,
+  message_type: typeof message,
+  model,
+})
+
+    if (
+      !Number.isSafeInteger(pdf_id) ||
+      Number(pdf_id) <= 0 ||
+      typeof message !== 'string' ||
+      !message.trim() ||
+      message.length > 10000 ||
+      typeof model !== 'string' ||
+      !ALLOWED_MODELS.includes(model)
+    ) {
+      return NextResponse.json(
+        { error: 'Invalid pdf_id, message or model' },
+        { status: 400 },
+      )
+    }
+
+    const pdfId = Number(pdf_id)
+
+    const { data: pdfRow, error: pdfError } = await supabaseAdmin
+      .from('student_pdfs')
+      .select('file_url')
+      .eq('pdf_id', pdfId)
+      .eq('student_number', student.student_number)
+      .maybeSingle()
+
+    if (pdfError) {
+      console.error('Failed to retrieve PDF:', pdfError)
+      return NextResponse.json(
+        { error: 'Failed to retrieve PDF' },
+        { status: 500 },
+      )
+    }
+
+    if (!pdfRow) {
       return NextResponse.json({ error: 'PDF not found' }, { status: 404 })
     }
 
-    const { data: historyRows, error: historyErr } = await supabaseAdmin
+    const { data: historyRows, error: historyError } = await supabaseAdmin
       .from('pdf_chat_messages')
       .select('role, content')
-      .eq('pdf_id', pdf_id)
+      .eq('pdf_id', pdfId)
       .eq('model', model)
       .order('created_at', { ascending: true })
 
-    if (historyErr) {
-      console.error('❌ History fetch error:', historyErr)
-      return NextResponse.json({ error: historyErr.message }, { status: 500 })
+    if (historyError) {
+      console.error('Failed to fetch chat history:', historyError)
+      return NextResponse.json(
+        { error: 'Failed to retrieve chat history' },
+        { status: 500 },
+      )
     }
 
     const history: ChatMessage[] = (historyRows ?? []).map((row) => ({
@@ -59,25 +127,29 @@ export async function POST(request: Request) {
     }))
 
     let geminiStream: ReadableStream<Uint8Array>
+
     try {
       geminiStream = await streamMessage({
-        pdfId: pdf_id,
+        pdfId,
         fileUrl: pdfRow.file_url,
         history,
-        newMessage: message,
+        newMessage: message.trim(),
         model,
       })
-    } catch (err) {
-      console.error('Gemini chat failed:', err)
+    } catch (error) {
+      console.error('AI chat request failed:', error)
 
-      if (err instanceof Error && err.message === 'QUOTA_EXCEEDED') {
+      if (error instanceof Error && error.message === 'QUOTA_EXCEEDED') {
         return NextResponse.json(
-          { error: 'Daily AI limit reached for this model — try again tomorrow, or switch models.' },
-          { status: 429 }
+          { error: 'Daily AI limit reached for this model. Try again later or switch models.' },
+          { status: 429 },
         )
       }
 
-      return NextResponse.json({ error: 'AI request failed, please try again' }, { status: 502 })
+      return NextResponse.json(
+        { error: 'AI request failed. Please try again.' },
+        { status: 502 },
+      )
     }
 
     let fullReply = ''
@@ -95,23 +167,33 @@ export async function POST(request: Request) {
             fullReply += decoder.decode(value, { stream: true })
             controller.enqueue(value)
           }
-        } catch (streamErr) {
-          console.error('❌ Error reading AI stream:', streamErr)
+
+          fullReply += decoder.decode()
+        } catch (error) {
+          console.error('Error reading AI stream:', error)
         } finally {
           controller.close()
 
-         if (supabaseAdmin && fullReply) {
-            const { error: insertErr } = await supabaseAdmin
+          if (fullReply) {
+            const { error: insertError } = await supabaseAdmin!
               .from('pdf_chat_messages')
               .insert([
-                { pdf_id, role: 'user', content: message, model },
-                { pdf_id, role: 'assistant', content: fullReply, model },
+                {
+                  pdf_id: pdfId,
+                  role: 'user',
+                  content: message.trim(),
+                  model,
+                },
+                {
+                  pdf_id: pdfId,
+                  role: 'assistant',
+                  content: fullReply,
+                  model,
+                },
               ])
 
-            if (insertErr) {
-              console.error('❌ Failed to save chat messages:', insertErr)
-            } else {
-              console.log('✅ Chat messages saved successfully!')
+            if (insertError) {
+              console.error('Failed to save chat messages:', insertError)
             }
           }
         }
@@ -121,15 +203,16 @@ export async function POST(request: Request) {
     return new Response(outStream, {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
-        'Cache-Control': 'no-cache',
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
       },
     })
-    
   } catch (error) {
-    console.error('❌ API error:', error)
+    console.error('Chat API error:', error)
+
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

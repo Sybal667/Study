@@ -1,42 +1,49 @@
 'use server'
 
-import { createClient } from '@supabase/supabase-js'
+import { createSupabaseServerClient } from '@/lib/supabaseServer'
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
 
 export async function deleteAuthUser(userId: string) {
   console.log('🔑 Attempting to delete user:', userId)
-  
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  
-  if (!supabaseUrl || !supabaseServiceKey) {
+
+  if (!userId || typeof userId !== 'string') {
+    return { success: false, error: 'Valid user ID is required' }
+  }
+
+  const supabase = await createSupabaseServerClient()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
+
+  if (authError || !user) {
+    return { success: false, error: 'Unauthorized' }
+  }
+
+  if (user.id !== userId) {
+    return { success: false, error: 'Forbidden' }
+  }
+
+  if (!supabaseAdmin) {
     console.error('❌ Missing environment variables for admin client')
     return { success: false, error: 'Server configuration error' }
   }
-  
-  const supabaseAdmin = createClient(
-    supabaseUrl,
-    supabaseServiceKey,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    }
-  )
 
   try {
     const { error } = await supabaseAdmin.auth.admin.deleteUser(userId)
-    
+
     if (error) {
       console.error('❌ Delete user error:', error)
       return { success: false, error: error.message }
     }
-    
+
     console.log('✅ User deleted successfully:', userId)
     return { success: true }
-    
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Unexpected error in deleteAuthUser:', error)
-    return { success: false, error: error.message }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unexpected error',
+    }
   }
 }

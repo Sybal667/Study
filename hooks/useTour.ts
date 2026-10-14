@@ -1,21 +1,52 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { supabase } from '@/lib/supabase'
 import { TourStage, TOUR_STEPS } from '@/lib/tourSteps'
 
-const STORAGE_KEY = 'studyPageTourCompleted'
+// Per-account flag. The database (students.tour_completed_at) is the source of
+// truth; localStorage is only a per-student safety net if the DB is unreachable.
+const localKey = (studentNumber: string | number) => `studyTourSeen:${studentNumber}`
 
-async function syncTourCompletionToBackend(studentNumber: string | number | null | undefined) {
-  if (!studentNumber) return
+function readLocal(studentNumber: string | number): boolean {
   try {
-    await fetch('/api/tour/complete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ student_number: studentNumber }),
-    })
+    return window.localStorage.getItem(localKey(studentNumber)) === 'true'
   } catch {
-    // non-blocking
+    return false
   }
+}
+
+function writeLocal(studentNumber: string | number) {
+  try {
+    window.localStorage.setItem(localKey(studentNumber), 'true')
+  } catch {
+    // storage blocked (private mode etc.) - the DB flag still applies
+  }
+}
+
+/** true = tour already seen, false = never seen, null = could not tell */
+async function hasSeenTour(studentNumber: string | number): Promise<boolean | null> {
+  const { data, error } = await supabase
+    .from('students')
+    .select('tour_completed_at')
+    .eq('student_number', studentNumber)
+    .maybeSingle()
+
+  if (error || !data) {
+    console.error('Tour check failed:', error)
+    return null
+  }
+  return data.tour_completed_at != null
+}
+
+async function markTourSeen(studentNumber: string | number) {
+  writeLocal(studentNumber)
+  const { error } = await supabase
+    .from('students')
+    .update({ tour_completed_at: new Date().toISOString() })
+    .eq('student_number', studentNumber)
+    .is('tour_completed_at', null) // never overwrite the original first-seen time
+  if (error) console.error('Failed to save tour flag:', error)
 }
 
 export function useTour(opts: {
@@ -28,23 +59,40 @@ export function useTour(opts: {
 
   const [stage, setStage] = useState<TourStage>('done')
   const [stepIndex, setStepIndex] = useState(0)
-  const initialized = useRef(false)
+  const decidedFor = useRef<string | number | null>(null)
+  const pdfUrlRef = useRef(pdfUrl)
+  pdfUrlRef.current = pdfUrl
 
-  // Decide once, on mount, whether to start the tour and where
+  // Decide once per signed-in student, only after we know who they are.
+  // Anything uncertain (no student yet, lookup failed) means NO tour.
   useEffect(() => {
-    if (initialized.current) return
-    initialized.current = true
+    if (!studentNumber) return
+    if (decidedFor.current === studentNumber) return
+    decidedFor.current = studentNumber
 
-    const seenLocally =
-      typeof window !== 'undefined' && window.localStorage.getItem(STORAGE_KEY) === 'true'
-    if (seenLocally) return
+    let cancelled = false
+    ;(async () => {
+      if (readLocal(studentNumber)) return // already seen on this browser
 
-    setStage(pdfUrl ? 'pdf' : 'upload')
-    setStepIndex(0)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+      const seen = await hasSeenTour(studentNumber)
+      if (cancelled || seen !== false) return // seen before, or unknown -> stay quiet
 
-// Auto-advance out of a blocking step once its real-world condition is met
+      // First time: record it right away so a refresh or a second tab won't repeat it
+      await markTourSeen(studentNumber)
+      if (cancelled) return
+
+      setStage(pdfUrlRef.current ? 'pdf' : 'upload')
+      setStepIndex(0)
+    })()
+
+    return () => {
+      cancelled = true
+      // allow a re-run if the effect was torn down before it finished
+      if (decidedFor.current === studentNumber) decidedFor.current = null
+    }
+  }, [studentNumber])
+
+  // Auto-advance out of a blocking step once its real-world condition is met
   useEffect(() => {
     if (stage !== 'upload') return
     const current = TOUR_STEPS.upload[stepIndex]
@@ -54,13 +102,9 @@ export function useTour(opts: {
     }
   }, [stage, stepIndex, pdfUrl, uploading])
 
-const complete = useCallback(() => {
+  const complete = useCallback(() => {
     setStage('done')
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, 'true')
-    }
-    syncTourCompletionToBackend(studentNumber)
-  }, [studentNumber])
+  }, [])
 
   // Called directly by upload-trigger buttons, so the tooltip disappears
   // the instant the user clicks — not when the upload finishes.
@@ -98,7 +142,7 @@ const complete = useCallback(() => {
   const activeStep = stage === 'done' ? null : TOUR_STEPS[stage][stepIndex]
   const isLastStep = stage !== 'done' ? stepIndex === TOUR_STEPS[stage].length - 1 : false
 
-return {
+  return {
     stage,
     activeStep,
     isLastStep,

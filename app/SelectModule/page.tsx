@@ -192,7 +192,7 @@ export default function SelectModule() {
         <div style={headerStyle}>
           <div>
             <h1 style={titleStyle}>
-              Welcome back, {studentInfo?.full_name || 'Student'} 👋
+          {studentInfo?.full_name || 'Student'} 
             </h1>
             <p style={subtitleStyle}>
               {studentInfo?.degree_name} • Year {studentInfo?.current_year}
@@ -216,17 +216,16 @@ export default function SelectModule() {
         {/* Modules Grid */}
         <div style={modulesSectionStyle}>
           <div style={modulesHeaderStyle}>
-            <h2 style={modulesTitleStyle}>Your Modules</h2>
+            <h2 style={modulesTitleStyle}>Let's choose the module we want to study for ⬇️ </h2>
             <span style={moduleCountStyle}>
               {modules.length} module{modules.length !== 1 ? 's' : ''}
             </span>
           </div>
-
           {modules.length === 0 ? (
             <div style={emptyStateStyle}>
               <p>📚 No modules found</p>
               <p style={{ fontSize: '14px', opacity: 0.6, marginTop: '10px' }}>
-                Please contact your academic advisor.
+                Please contact Mokoena Mohau (069 343 0230) with the Degree + YOS 
               </p>
             </div>
           ) : (
@@ -271,7 +270,7 @@ const containerStyle = {
   display: 'flex',
   justifyContent: 'center',
   alignItems: 'center',
-  backgroundImage: "url('/signupbackground.png')",
+  backgroundImage: "url('/signupbackground.jpg.jpeg')",
   backgroundSize: 'cover',
   backgroundPosition: 'center',
   backgroundRepeat: 'no-repeat',

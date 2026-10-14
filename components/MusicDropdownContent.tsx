@@ -1,8 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import Image from 'next/image'
-import { navButtonStyle } from '@/lib/studyStyles'
+import {
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
+  Repeat,
+  Repeat1,
+  Volume1,
+  Volume2,
+  VolumeX,
+  Search,
+  X,
+  Music2,
+} from 'lucide-react'
 import { useMusicContext } from '@/lib/musicContext'
 
 interface MusicDropdownContentProps {
@@ -14,6 +26,15 @@ interface YouTubeTrack {
   title: string
   artist: string
   thumbnail?: string
+}
+
+const QUICK_PICKS = ['Lo-fi beats', 'Study music', 'Classical piano', 'Jazz', 'Rain sounds', 'Ambient']
+
+const formatTime = (seconds: number) => {
+  if (!seconds || isNaN(seconds)) return '0:00'
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
 }
 
 export default function MusicDropdownContent({ onClose }: MusicDropdownContentProps) {
@@ -31,43 +52,22 @@ export default function MusicDropdownContent({ onClose }: MusicDropdownContentPr
     handleNext,
     handleRepeatToggle,
     setVolumeLevel,
+    seekTo,
   } = useMusicContext()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
+  const [lastVolume, setLastVolume] = useState(70)
 
-  const [hoveredClose, setHoveredClose] = useState(false)
-  const [hoveredPlay, setHoveredPlay] = useState(false)
-  const [hoveredPrevious, setHoveredPrevious] = useState(false)
-  const [hoveredNext, setHoveredNext] = useState(false)
-  const [hoveredRepeat, setHoveredRepeat] = useState(false)
-  const [hoveredSearch, setHoveredSearch] = useState(false)
-  const [hoveredTrack, setHoveredTrack] = useState<string | null>(null)
-
-  const formatTime = (seconds: number) => {
-    if (!seconds || isNaN(seconds)) return '0:00'
-    const m = Math.floor(seconds / 60)
-    const s = Math.floor(seconds % 60)
-    return `${m}:${s.toString().padStart(2, '0')}`
-  }
-
-  const getRepeatIcon = () => {
-    if (repeatMode === 'none') return '🔁'
-    if (repeatMode === 'all') return '🔁'
-    return '🔂'
-  }
-
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return
-
+  const runSearch = async (q: string) => {
+    const query = q.trim()
+    if (!query) return
     setIsSearching(true)
     setSearchError(null)
-
     try {
-      const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(searchQuery)}`)
+      const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(query)}`)
       if (!res.ok) throw new Error('Search failed')
-
       const data = await res.json()
       setSearchResults(data.results)
     } catch (err) {
@@ -78,395 +78,643 @@ export default function MusicDropdownContent({ onClose }: MusicDropdownContentPr
     }
   }
 
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
-        maxHeight: '480px',
-      }}
-    >
-      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-        <div
-          style={{
-            ...navButtonStyle,
-            flex: 1,
-            padding: '8px 12px',
-            fontSize: '13px',
-            backgroundColor: 'rgba(30, 58, 138, 0.6)',
-            borderColor: 'rgba(255,255,255,0.3)',
-            fontWeight: 'bold',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            color: 'white',
-          }}
-        >
-          <Image src="/youtube.png" alt="YouTube" width={18} height={18} />
-          <span>YouTube</span>
-        </div>
+  const toggleMute = () => {
+    if (volume > 0) {
+      setLastVolume(volume)
+      setVolumeLevel(0)
+    } else {
+      setVolumeLevel(lastVolume || 70)
+    }
+  }
 
-        <button
-          onClick={onClose}
-          onMouseEnter={() => setHoveredClose(true)}
-          onMouseLeave={() => setHoveredClose(false)}
-          style={{
-            ...navButtonStyle,
-            flex: 0.4,
-            padding: '8px',
-            fontSize: '14px',
-            fontWeight: 'bold',
-            color: 'white',
-            backgroundColor: hoveredClose ? 'rgba(255, 0, 0, 0.4)' : 'rgba(255, 0, 0, 0.2)',
-            borderColor: 'rgba(255, 0, 0, 0.3)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          ✕
+  const VolumeIcon = volume === 0 ? VolumeX : volume < 50 ? Volume1 : Volume2
+  const progressPct = progress.duration ? Math.min((progress.current / progress.duration) * 100, 100) : 0
+
+  return (
+    <div className="mp">
+      {/* 1. Header */}
+      <div className="mp-header">
+        <div className="mp-title">
+          <Music2 size={16} color="#ff0033" />
+          <span>YouTube Music</span>
+        </div>
+        <button className="mp-icon-btn" onClick={onClose} aria-label="Close music player">
+          <X size={18} />
         </button>
       </div>
 
-      <div
-        style={{
-          backgroundColor: 'rgba(255,255,255,0.05)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: '8px',
-          padding: '12px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div
-            style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '6px',
-              backgroundColor: 'rgba(30, 58, 138, 0.4)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '24px',
-              flexShrink: 0,
-            }}
-          >
-            🎵
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: '14px',
-                fontWeight: 'bold',
-                color: 'white',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {currentTrack?.title || 'No track selected'}
-            </div>
-            <div
-              style={{
-                fontSize: '12px',
-                color: 'rgba(255,255,255,0.6)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {currentTrack?.artist || 'Ready to play'}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ marginTop: '10px' }}>
-          <div
-            style={{
-              height: '3px',
-              backgroundColor: 'rgba(255,255,255,0.1)',
-              borderRadius: '2px',
-              position: 'relative',
-            }}
-          >
-            <div
-              style={{
-                width: progress.duration
-                  ? `${Math.min((progress.current / progress.duration) * 100, 100)}%`
-                  : '0%',
-                height: '100%',
-                backgroundColor: 'rgba(76, 175, 80, 0.8)',
-                borderRadius: '2px',
-                transition: 'width 0.3s',
-              }}
-            />
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '11px',
-              color: 'rgba(255,255,255,0.5)',
-              marginTop: '4px',
-            }}
-          >
-            <span>{formatTime(progress.current)}</span>
-            <span>{formatTime(progress.duration)}</span>
-          </div>
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            gap: '20px',
-            marginTop: '8px',
-          }}
-        >
-          <button
-            onMouseEnter={() => setHoveredPrevious(true)}
-            onMouseLeave={() => setHoveredPrevious(false)}
-            onClick={handlePrevious}
-            style={{
-              background: 'none',
-              border: '1px solid transparent',
-              color: 'white',
-              cursor: 'pointer',
-              padding: '8px',
-              fontSize: '20px',
-              borderRadius: '6px',
-              transition: 'all 0.2s',
-              backgroundColor: hoveredPrevious ? 'rgba(255,255,255,0.1)' : 'transparent',
-            }}
-          >
-            ⏮️
-          </button>
-
-          <button
-            onMouseEnter={() => setHoveredPlay(true)}
-            onMouseLeave={() => setHoveredPlay(false)}
-            onClick={handlePlayPause}
-            style={{
-              background: 'none',
-              border: '1px solid rgba(255,255,255,0.2)',
-              color: 'white',
-              cursor: 'pointer',
-              padding: '10px 14px',
-              fontSize: '24px',
-              borderRadius: '50%',
-              backgroundColor: hoveredPlay ? 'rgba(30, 58, 138, 0.8)' : 'rgba(30, 58, 138, 0.6)',
-              transition: 'all 0.2s',
-            }}
-          >
-            {isPlaying ? '⏸️' : '▶️'}
-          </button>
-
-          <button
-            onMouseEnter={() => setHoveredNext(true)}
-            onMouseLeave={() => setHoveredNext(false)}
-            onClick={handleNext}
-            style={{
-              background: 'none',
-              border: '1px solid transparent',
-              color: 'white',
-              cursor: 'pointer',
-              padding: '8px',
-              fontSize: '20px',
-              borderRadius: '6px',
-              transition: 'all 0.2s',
-              backgroundColor: hoveredNext ? 'rgba(255,255,255,0.1)' : 'transparent',
-            }}
-          >
-            ⏭️
-          </button>
-
-          <button
-            onMouseEnter={() => setHoveredRepeat(true)}
-            onMouseLeave={() => setHoveredRepeat(false)}
-            onClick={handleRepeatToggle}
-            style={{
-              background: 'none',
-              border: '1px solid transparent',
-              color: repeatMode !== 'none' ? 'rgba(76, 175, 80, 1)' : 'rgba(255,255,255,0.5)',
-              cursor: 'pointer',
-              padding: '8px',
-              fontSize: '18px',
-              borderRadius: '6px',
-              transition: 'all 0.2s',
-              backgroundColor: hoveredRepeat ? 'rgba(255,255,255,0.1)' : 'transparent',
-            }}
-          >
-            {getRepeatIcon()}
-          </button>
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '4px 0',
-        }}
-      >
-        <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)' }}>🔊</span>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={volume}
-          onChange={(e) => setVolumeLevel(parseInt(e.target.value))}
-          style={{
-            flex: 1,
-            height: '3px',
-            backgroundColor: 'rgba(255,255,255,0.1)',
-            borderRadius: '2px',
-            accentColor: 'rgba(76, 175, 80, 0.8)',
-            cursor: 'pointer',
-          }}
-        />
-      </div>
-
-      <div style={{ display: 'flex', gap: '8px' }}>
+      {/* 2. Search */}
+      <div className="mp-search">
         <input
           type="text"
-          placeholder="🔍 Search for songs..."
+          placeholder="Search songs, artists..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') handleSearch()
-          }}
-          style={{
-            flex: 1,
-            padding: '8px 12px',
-            backgroundColor: 'rgba(255,255,255,0.08)',
-            border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: '8px',
-            color: 'white',
-            fontSize: '13px',
-            outline: 'none',
-            transition: 'border-color 0.2s',
-          }}
-          onFocus={(e) => {
-            ;(e.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.4)'
-          }}
-          onBlur={(e) => {
-            ;(e.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.2)'
+            if (e.key === 'Enter') runSearch(searchQuery)
           }}
         />
-        <button
-          onMouseEnter={() => setHoveredSearch(true)}
-          onMouseLeave={() => setHoveredSearch(false)}
-          onClick={handleSearch}
-          disabled={isSearching}
-          style={{
-            ...navButtonStyle,
-            padding: '8px 16px',
-            fontSize: '13px',
-            fontWeight: 'bold',
-            color: 'white',
-            backgroundColor: hoveredSearch ? 'rgba(30, 58, 138, 0.8)' : 'rgba(30, 58, 138, 0.6)',
-            borderColor: 'rgba(255,255,255,0.2)',
-            opacity: isSearching ? 0.6 : 1,
-            cursor: isSearching ? 'not-allowed' : 'pointer',
-          }}
-        >
-          {isSearching ? '...' : 'Search'}
-        </button>
+        <div className="mp-search-actions">
+          {searchQuery && (
+            <button className="mp-search-btn" onClick={() => setSearchQuery('')} aria-label="Clear search">
+              <X size={16} />
+            </button>
+          )}
+          <button className="mp-search-btn" onClick={() => runSearch(searchQuery)} aria-label="Search">
+            <Search size={16} />
+          </button>
+        </div>
       </div>
 
-      <div
-        className="music-results-scroll"
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          maxHeight: '180px',
-          scrollbarWidth: 'thin',
-          scrollbarColor: 'rgba(255,255,255,0.25) transparent',
-        }}
-      >
-        {searchError && (
-          <div style={{ padding: '10px', fontSize: '12px', color: 'rgba(255,120,120,0.9)' }}>
-            {searchError}
-          </div>
-        )}
+      {/* 3. Results */}
+      <div className="mp-results">
+        {searchError && <div className="mp-error">{searchError}</div>}
 
-        {!searchError && !isSearching && searchResults.length === 0 && (
-          <div style={{ padding: '10px', fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>
-            Search for a song to get started.
-          </div>
-        )}
-
-        {searchResults.map((track: YouTubeTrack, index: number) => (
-          <div
-            key={track.id}
-            onMouseEnter={() => setHoveredTrack(track.id)}
-            onMouseLeave={() => setHoveredTrack(null)}
-            onClick={() => playTrackAtIndex(index, false)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              padding: '8px 10px',
-              borderRadius: '8px',
-              border: '1px solid transparent',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              backgroundColor: hoveredTrack === track.id ? 'rgba(255,255,255,0.08)' : 'transparent',
-              borderColor: hoveredTrack === track.id ? 'rgba(255,255,255,0.1)' : 'transparent',
-            }}
-          >
-            {track.thumbnail ? (
-              <img
-                src={track.thumbnail}
-                alt=""
-                style={{ width: '36px', height: '36px', borderRadius: '6px', marginRight: '10px', flexShrink: 0 }}
-              />
-            ) : (
-              <span style={{ marginRight: '12px', color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>▶</span>
-            )}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: '13px',
-                  color: 'white',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {track.title}
-              </div>
-              <div
-                style={{
-                  fontSize: '11px',
-                  color: 'rgba(255,255,255,0.5)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {track.artist}
+        {isSearching &&
+          Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="mp-row mp-skeleton">
+              <div className="mp-skel-thumb" />
+              <div className="mp-skel-lines">
+                <div />
+                <div />
               </div>
             </div>
+          ))}
+
+        {!isSearching && !searchError && searchResults.length === 0 && (
+          <div className="mp-empty">
+            <div className="mp-empty-label">Try one of these</div>
+            <div className="mp-chips">
+              {QUICK_PICKS.map((q) => (
+                <button
+                  key={q}
+                  className="mp-chip"
+                  onClick={() => {
+                    setSearchQuery(q)
+                    runSearch(q)
+                  }}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
           </div>
-        ))}
+        )}
+
+        {!isSearching && searchResults.length > 0 && <div className="mp-results-label">Results</div>}
+
+        {!isSearching &&
+          searchResults.map((track: YouTubeTrack, index: number) => {
+            const isCurrent = !!track.id && currentTrack?.id === track.id
+            return (
+              <div
+                key={`${track.id ?? 'track'}-${index}`}
+                className={`mp-row ${isCurrent ? 'current' : ''}`}
+                onClick={() => playTrackAtIndex(index, false)}
+              >
+                <div className="mp-thumb-wrap">
+                  {track.thumbnail ? (
+                    <img className="mp-thumb" src={track.thumbnail} alt="" />
+                  ) : (
+                    <div className="mp-thumb mp-thumb-empty" />
+                  )}
+                  <div className="mp-thumb-overlay">
+                    {isCurrent && isPlaying ? (
+                      <span className="mp-eq">
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                    ) : (
+                      <Play size={16} fill="currentColor" />
+                    )}
+                  </div>
+                </div>
+                <div className="mp-row-text">
+                  <div className="mp-row-title">{track.title}</div>
+                  <div className="mp-row-artist">{track.artist}</div>
+                </div>
+              </div>
+            )
+          })}
+      </div>
+
+      {/* 4. Controls + volume */}
+      <div className="mp-player">
+        <div className="mp-controls">
+          <button className="mp-icon-btn" onClick={handlePrevious} aria-label="Previous">
+            <SkipBack size={20} fill="currentColor" />
+          </button>
+          <button className="mp-play" onClick={handlePlayPause} aria-label={isPlaying ? 'Pause' : 'Play'}>
+            {isPlaying ? (
+              <Pause size={20} fill="currentColor" />
+            ) : (
+              <Play size={20} fill="currentColor" style={{ marginLeft: 2 }} />
+            )}
+          </button>
+          <button className="mp-icon-btn" onClick={handleNext} aria-label="Next">
+            <SkipForward size={20} fill="currentColor" />
+          </button>
+          <button
+            className={`mp-icon-btn ${repeatMode !== 'none' ? 'active' : ''}`}
+            onClick={handleRepeatToggle}
+            aria-label="Repeat"
+            title={repeatMode === 'none' ? 'Repeat off' : repeatMode === 'all' ? 'Repeat all' : 'Repeat one'}
+          >
+            {repeatMode === 'one' ? <Repeat1 size={18} /> : <Repeat size={18} />}
+          </button>
+        </div>
+
+        <div className="mp-seek">
+          <span className="mp-time">{formatTime(progress.current)}</span>
+          <input
+            className="mp-range"
+            type="range"
+            min={0}
+            max={progress.duration || 1}
+            step={1}
+            value={progress.current}
+            disabled={!currentTrack}
+            onChange={(e) => seekTo(Number(e.target.value))}
+            style={{ ['--pct' as string]: `${progressPct}%` }}
+            aria-label="Seek"
+          />
+          <span className="mp-time">{formatTime(progress.duration)}</span>
+        </div>
+
+        <div className="mp-volume">
+          <button className="mp-icon-btn small" onClick={toggleMute} aria-label="Mute">
+            <VolumeIcon size={16} />
+          </button>
+          <input
+            className="mp-range"
+            type="range"
+            min={0}
+            max={100}
+            value={volume}
+            onChange={(e) => setVolumeLevel(parseInt(e.target.value))}
+            style={{ ['--pct' as string]: `${volume}%` }}
+            aria-label="Volume"
+          />
+        </div>
+      </div>
+
+      {/* 5. Now playing (small picture + name) */}
+      <div className="mp-now">
+        {currentTrack?.thumbnail ? (
+          <img className="mp-now-thumb" src={currentTrack.thumbnail} alt="" />
+        ) : (
+          <div className="mp-now-thumb mp-now-empty">
+            <Music2 size={20} />
+          </div>
+        )}
+        <div className="mp-now-text">
+          <div className="mp-now-title">{currentTrack?.title || 'Nothing playing'}</div>
+          <div className="mp-now-artist">{currentTrack?.artist || 'Pick a song from the results'}</div>
+        </div>
       </div>
 
       <style jsx>{`
-        .music-results-scroll::-webkit-scrollbar {
-          width: 6px;
+        .mp {
+          display: flex;
+          flex-direction: column;
+          color: #fff;
+          max-height: 640px;
         }
-        .music-results-scroll::-webkit-scrollbar-track {
-          background: transparent;
+
+        /* header */
+        .mp-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 12px 12px 6px 16px;
         }
-        .music-results-scroll::-webkit-scrollbar-thumb {
-          background-color: rgba(255, 255, 255, 0.18);
-          border-radius: 10px;
+        .mp-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 14px;
+          font-weight: 700;
+          letter-spacing: 0.02em;
         }
-        .music-results-scroll::-webkit-scrollbar-thumb:hover {
-          background-color: rgba(255, 255, 255, 0.35);
+
+        /* shared buttons */
+        .mp-icon-btn {
+          background: none;
+          border: none;
+          color: #b3b3b3;
+          cursor: pointer;
+          width: 34px;
+          height: 34px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: color 0.15s, background 0.15s, transform 0.1s;
+        }
+        .mp-icon-btn.small {
+          width: 28px;
+          height: 28px;
+        }
+        .mp-icon-btn:hover {
+          color: #fff;
+          background: rgba(255, 255, 255, 0.1);
+        }
+        .mp-icon-btn:active {
+          transform: scale(0.94);
+        }
+        .mp-icon-btn.active {
+          color: #1db954;
+        }
+
+        /* search */
+        .mp-search {
+          position: relative;
+          margin: 4px 16px 10px;
+        }
+        .mp-search input {
+          width: 100%;
+          box-sizing: border-box;
+          padding: 10px 76px 10px 16px;
+          border-radius: 999px;
+          border: 1px solid transparent;
+          background: #2a2a2a;
+          color: #fff;
+          font-size: 13px;
+          outline: none;
+          transition: background 0.15s, border-color 0.15s;
+        }
+        .mp-search input::placeholder {
+          color: #8a8a8a;
+        }
+        .mp-search input:hover {
+          background: #333;
+        }
+        .mp-search input:focus {
+          background: #333;
+          border-color: rgba(255, 255, 255, 0.6);
+        }
+        .mp-search-actions {
+          position: absolute;
+          right: 6px;
+          top: 50%;
+          transform: translateY(-50%);
+          display: flex;
+          align-items: center;
+          gap: 2px;
+        }
+        .mp-search-btn {
+          width: 30px;
+          height: 30px;
+          border: none;
+          border-radius: 50%;
+          background: none;
+          color: #b3b3b3;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: color 0.15s, background 0.15s;
+        }
+        .mp-search-btn:hover {
+          color: #fff;
+          background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* results */
+        .mp-results {
+          overflow-y: auto;
+          height: 300px;
+          padding: 0 8px 8px;
+          scrollbar-width: thin;
+        }
+        .mp-results-label {
+          font-size: 12px;
+          font-weight: 700;
+          color: #a7a7a7;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          padding: 2px 8px 8px;
+        }
+        .mp-error {
+          padding: 10px 12px;
+          font-size: 12px;
+          color: #ff7a7a;
+        }
+        .mp-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 7px 8px;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: background 0.15s;
+        }
+        .mp-row:hover {
+          background: rgba(255, 255, 255, 0.1);
+        }
+        .mp-row.current {
+          background: rgba(255, 255, 255, 0.07);
+        }
+        .mp-thumb-wrap {
+          position: relative;
+          width: 72px;
+          height: 44px;
+          flex-shrink: 0;
+          border-radius: 6px;
+          overflow: hidden;
+          background: #282828;
+        }
+        .mp-thumb {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+        .mp-thumb-overlay {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #fff;
+          background: rgba(0, 0, 0, 0.5);
+          opacity: 0;
+          transition: opacity 0.15s;
+        }
+        .mp-row:hover .mp-thumb-overlay,
+        .mp-row.current .mp-thumb-overlay {
+          opacity: 1;
+        }
+        .mp-row-text {
+          flex: 1;
+          min-width: 0;
+        }
+        .mp-row-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: #fff;
+          line-height: 1.3;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+        .mp-row.current .mp-row-title {
+          color: #1db954;
+        }
+        .mp-row-artist {
+          font-size: 12px;
+          color: #a7a7a7;
+          margin-top: 3px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        /* equalizer */
+        .mp-eq {
+          display: inline-flex;
+          align-items: flex-end;
+          gap: 2px;
+          height: 14px;
+        }
+        .mp-eq i {
+          width: 3px;
+          background: #1db954;
+          border-radius: 1px;
+          animation: mp-bounce 0.9s ease-in-out infinite;
+        }
+        .mp-eq i:nth-child(1) {
+          height: 60%;
+          animation-delay: -0.4s;
+        }
+        .mp-eq i:nth-child(2) {
+          height: 100%;
+          animation-delay: -0.2s;
+        }
+        .mp-eq i:nth-child(3) {
+          height: 40%;
+        }
+        @keyframes mp-bounce {
+          0%,
+          100% {
+            transform: scaleY(0.4);
+          }
+          50% {
+            transform: scaleY(1);
+          }
+        }
+
+        /* empty state chips */
+        .mp-empty {
+          padding: 8px;
+        }
+        .mp-empty-label {
+          font-size: 12px;
+          color: #a7a7a7;
+          margin-bottom: 10px;
+        }
+        .mp-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .mp-chip {
+          padding: 7px 14px;
+          border-radius: 999px;
+          border: none;
+          background: #2a2a2a;
+          color: #fff;
+          font-size: 12px;
+          cursor: pointer;
+          transition: background 0.15s;
+        }
+        .mp-chip:hover {
+          background: #3a3a3a;
+        }
+
+        /* loading skeleton */
+        .mp-skeleton {
+          cursor: default;
+          pointer-events: none;
+        }
+        .mp-skel-thumb {
+          width: 72px;
+          height: 44px;
+          border-radius: 6px;
+          background: #2a2a2a;
+          animation: mp-pulse 1.2s ease-in-out infinite;
+        }
+        .mp-skel-lines {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
+        }
+        .mp-skel-lines div {
+          height: 9px;
+          border-radius: 4px;
+          background: #2a2a2a;
+          animation: mp-pulse 1.2s ease-in-out infinite;
+        }
+        .mp-skel-lines div:first-child {
+          width: 75%;
+        }
+        .mp-skel-lines div:last-child {
+          width: 45%;
+        }
+        @keyframes mp-pulse {
+          0%,
+          100% {
+            opacity: 0.5;
+          }
+          50% {
+            opacity: 1;
+          }
+        }
+
+        /* controls + volume */
+        .mp-player {
+          padding: 10px 16px 8px;
+          border-top: 1px solid rgba(255, 255, 255, 0.08);
+          background: #181818;
+        }
+        .mp-controls {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 18px;
+        }
+        .mp-controls .mp-icon-btn {
+          color: #fff;
+        }
+        .mp-controls .mp-icon-btn.active {
+          color: #1db954;
+        }
+        .mp-play {
+          width: 42px;
+          height: 42px;
+          border-radius: 50%;
+          border: none;
+          background: #fff;
+          color: #000;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: transform 0.1s, background 0.15s;
+        }
+        .mp-play:hover {
+          transform: scale(1.06);
+          background: #f0f0f0;
+        }
+        .mp-play:active {
+          transform: scale(0.97);
+        }
+        .mp-seek {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 8px;
+        }
+        .mp-time {
+          font-size: 11px;
+          color: #a7a7a7;
+          min-width: 32px;
+          text-align: center;
+          font-variant-numeric: tabular-nums;
+        }
+        .mp-volume {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-top: 6px;
+        }
+
+        /* sliders */
+        .mp-range {
+          -webkit-appearance: none;
+          appearance: none;
+          flex: 1;
+          width: 100%;
+          height: 4px;
+          border-radius: 2px;
+          outline: none;
+          cursor: pointer;
+          background: linear-gradient(to right, #fff var(--pct), rgba(255, 255, 255, 0.2) var(--pct));
+        }
+        .mp-range:hover {
+          background: linear-gradient(to right, #1db954 var(--pct), rgba(255, 255, 255, 0.2) var(--pct));
+        }
+        .mp-range:disabled {
+          cursor: default;
+          opacity: 0.5;
+        }
+        .mp-range::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          background: #fff;
+          opacity: 0;
+          transition: opacity 0.15s;
+        }
+        .mp-range:hover::-webkit-slider-thumb {
+          opacity: 1;
+        }
+        .mp-range::-moz-range-thumb {
+          width: 12px;
+          height: 12px;
+          border: none;
+          border-radius: 50%;
+          background: #fff;
+          opacity: 0;
+        }
+        .mp-range:hover::-moz-range-thumb {
+          opacity: 1;
+        }
+
+        /* now playing */
+        .mp-now {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 10px 16px 14px;
+          background: #181818;
+        }
+        .mp-now-thumb {
+          width: 48px;
+          height: 48px;
+          border-radius: 6px;
+          object-fit: cover;
+          flex-shrink: 0;
+          background: #282828;
+        }
+        .mp-now-empty {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #6a6a6a;
+        }
+        .mp-now-text {
+          flex: 1;
+          min-width: 0;
+        }
+        .mp-now-title {
+          font-size: 13px;
+          font-weight: 700;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .mp-now-artist {
+          font-size: 12px;
+          color: #a7a7a7;
+          margin-top: 2px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
       `}</style>
     </div>

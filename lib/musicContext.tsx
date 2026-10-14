@@ -16,10 +16,17 @@ declare global {
   }
 }
 
+interface CurrentTrack {
+  id: string
+  title: string
+  artist: string
+  thumbnail?: string
+}
+
 interface MusicContextValue {
   searchResults: YouTubeTrack[]
   setSearchResults: (tracks: YouTubeTrack[]) => void
-  currentTrack: { title: string; artist: string } | null
+  currentTrack: CurrentTrack | null
   currentIndex: number
   isPlaying: boolean
   volume: number
@@ -32,6 +39,7 @@ interface MusicContextValue {
   handleNext: () => void
   handleRepeatToggle: () => void
   setVolumeLevel: (v: number) => void
+  seekTo: (seconds: number) => void
 }
 
 const MusicContext = createContext<MusicContextValue | null>(null)
@@ -42,7 +50,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   const [isPlayerReady, setIsPlayerReady] = useState(false)
 
   const [searchResults, setSearchResults] = useState<YouTubeTrack[]>([])
-  const [currentTrack, setCurrentTrack] = useState<{ title: string; artist: string } | null>(null)
+  const [currentTrack, setCurrentTrack] = useState<CurrentTrack | null>(null)
   const [currentIndex, setCurrentIndex] = useState<number>(-1)
   const [isPlaying, setIsPlaying] = useState(false)
   const [volume, setVolume] = useState(70)
@@ -51,8 +59,10 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
 
   const repeatModeRef = useRef(repeatMode)
   const searchResultsRef = useRef(searchResults)
+  const currentIndexRef = useRef(-1)
   useEffect(() => { repeatModeRef.current = repeatMode }, [repeatMode])
   useEffect(() => { searchResultsRef.current = searchResults }, [searchResults])
+  useEffect(() => { currentIndexRef.current = currentIndex }, [currentIndex])
 
   useEffect(() => {
     if (window.YT && window.YT.Player) {
@@ -83,7 +93,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
 
     playerRef.current.loadVideoById(track.id)
     playerRef.current.playVideo()
-    setCurrentTrack({ title: track.title, artist: track.artist })
+    setCurrentTrack({ id: track.id, title: track.title, artist: track.artist, thumbnail: track.thumbnail })
     setCurrentIndex(targetIndex)
     setIsPlaying(true)
   }
@@ -108,9 +118,9 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
               event.target.seekTo(0)
               event.target.playVideo()
             } else if (mode === 'all') {
-              playTrackAtIndex(currentIndex + 1, true)
+              playTrackAtIndex(currentIndexRef.current + 1, true)
             } else {
-              const next = currentIndex + 1
+              const next = currentIndexRef.current + 1
               if (next < searchResultsRef.current.length) playTrackAtIndex(next, false)
               else setIsPlaying(false)
             }
@@ -149,6 +159,11 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     setRepeatMode((prev) => (prev === 'none' ? 'all' : prev === 'all' ? 'one' : 'none'))
   }
 
+  const seekTo = (seconds: number) => {
+    playerRef.current?.seekTo(seconds, true)
+    setProgress((p) => ({ ...p, current: seconds }))
+  }
+
   const setVolumeLevel = (v: number) => {
     setVolume(v)
     playerRef.current?.setVolume(v)
@@ -172,6 +187,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
         handleNext,
         handleRepeatToggle,
         setVolumeLevel,
+        seekTo,
       }}
     >
       <div style={{ display: 'none' }}>

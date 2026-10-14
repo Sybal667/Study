@@ -1,0 +1,1656 @@
+﻿
+========== hooks/usePdfDocument.ts ==========
+import { useEffect, useRef, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+
+export function usePdfDocument(
+  studentNumber: number | null,
+  moduleId: number | null,
+  onUploaded: () => Promise<void> | void
+) {
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [pdfId, setPdfId] = useState<number | null>(null)
+  
+  const [pdfFile, setPdfFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [numPages, setNumPages] = useState<number | null>(null)
+  const [scale, setScale] = useState<number>(1.0)
+  const [rotation, setRotation] = useState<number>(0)
+  const [pdfReady, setPdfReady] = useState(false)
+  const [showThumbnails, setShowThumbnails] = useState(false)
+  const [pageThumbnails, setPageThumbnails] = useState<string[]>([])
+  const [currentPage, setCurrentPage] = useState(1)
+
+  const pdfContainerRef = useRef<HTMLDivElement>(null)
+  const sidebarRef = useRef<HTMLDivElement>(null)
+  const currentPageRef = useRef<number>(1)
+  const scrollSaveRef = useRef<number>(0)
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const pageTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const hasRestoredRef = useRef(false)
+
+  const saveScrollToDB = async (value: number) => {
+    if (!moduleId || !studentNumber) return
+    if (!pdfUrl) return
+
+    const { error } = await supabase
+      .from('student_pdfs')
+      .update({
+        scroll_position: value,
+        last_opened_at: new Date().toISOString(),
+      })
+      .eq('file_url', pdfUrl)
+
+    if (error) {
+      console.error('Failed to save scroll:', error)
+    }
+  }
+
+  const generateThumbnails = async (pdf: any) => {
+    const thumbs: string[] = []
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i)
+      const viewport = page.getViewport({ scale: 0.2 })
+
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+
+      canvas.width = viewport.width
+      canvas.height = viewport.height
+
+      await page.render({
+        canvasContext: ctx!,
+        viewport,
+      }).promise
+
+      thumbs.push(canvas.toDataURL())
+    }
+
+    setPageThumbnails(thumbs)
+  }
+
+  const savePageToDB = async (page: number) => {
+    if (!pdfUrl) return
+
+    await supabase
+      .from('student_pdfs')
+      .update({
+        last_page: page,
+        last_opened_at: new Date().toISOString(),
+      })
+      .eq('file_url', pdfUrl)
+  }
+
+const saveZoomToDB = async (value: number) => {
+    if (!moduleId || !studentNumber) return
+    if (!pdfUrl) return
+
+    await supabase
+      .from('student_pdfs')
+      .update({
+        zoom_level: value,
+        last_opened_at: new Date().toISOString(),
+      })
+      .eq('file_url', pdfUrl)
+  }
+
+  const saveRotationToDB = async (value: number) => {
+    if (!moduleId || !studentNumber) return
+    if (!pdfUrl) return
+
+    await supabase
+      .from('student_pdfs')
+      .update({
+        rotation: value,
+        last_opened_at: new Date().toISOString(),
+      })
+      .eq('file_url', pdfUrl)
+  }
+
+  const rotatePage = () => {
+    setRotation((prev) => {
+      const newRotation = (prev + 90) % 360
+      saveRotationToDB(newRotation)
+      return newRotation
+    })
+  }
+
+  const restorePdfState = async () => {
+    if (!pdfContainerRef.current || !numPages || !pdfUrl) return
+
+    const container = pdfContainerRef.current
+
+    const { data } = await supabase
+      .from('student_pdfs')
+      .select('scroll_position, last_page, zoom_level, rotation')
+      .eq('file_url', pdfUrl)
+      .single()
+
+    if (!data) return
+
+    const dbScroll = Number(data.scroll_position || 0)
+    const dbPage = Number(data.last_page || 1)
+    const dbZoom = Number(data.zoom_level || 1)
+    const dbRotation = Number(data.rotation || 0)
+
+    //  zoom 
+    setScale(dbZoom)
+    setRotation(dbRotation)
+
+    // Wait for layout to fully recalc after zoom
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        const pageHeight = container.scrollHeight / numPages
+
+        //  jump to correct page first
+        container.scrollTop = pageHeight * (dbPage - 1)
+
+        // Fine-tune scroll AFTER page layout stabilizes
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const maxScroll = container.scrollHeight - container.clientHeight
+
+            container.scrollTop = maxScroll * dbScroll
+          })
+        })
+      }, 150)
+    })
+  }
+
+  const goToPage = (page: number) => {
+    const container = pdfContainerRef.current
+    if (!container || !numPages) return
+    const clamped = Math.max(1, Math.min(page, numPages))
+    const pageHeight = container.scrollHeight / numPages
+    container.scrollTop = pageHeight * (clamped - 1)
+  }
+
+  const updatePage = (page: number) => {
+    if (pageTimeoutRef.current) {
+      clearTimeout(pageTimeoutRef.current)
+    }
+
+    pageTimeoutRef.current = setTimeout(async () => {
+      if (!pdfUrl) return
+
+      await supabase
+        .from('student_pdfs')
+        .update({
+          last_page: page,
+          last_opened_at: new Date().toISOString(),
+        })
+        .eq('file_url', pdfUrl)
+    }, 1200)
+  }
+
+  useEffect(() => {
+    setCurrentPage(currentPageRef.current)
+  }, [])
+
+  useEffect(() => {
+    if (!showThumbnails) return
+    if (!sidebarRef.current) return
+
+    const el = sidebarRef.current
+
+    const itemHeight = 120 
+    el.scrollTop = (currentPage - 1) * itemHeight
+  }, [showThumbnails, currentPage])
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('.thumbnail-sidebar')) {
+        setShowThumbnails(false)
+      }
+    }
+
+    if (showThumbnails) {
+      document.addEventListener('click', handleClick)
+    }
+
+    return () => document.removeEventListener('click', handleClick)
+  }, [showThumbnails])
+
+  useEffect(() => {
+    const container = pdfContainerRef.current
+    if (!container || !numPages) return
+
+    const handleScroll = () => {
+      const container = pdfContainerRef.current
+      if (!container) return
+
+      const scrollTop = container.scrollTop
+
+      const pageHeight = container.scrollHeight / numPages
+
+      let page = 1
+
+      for (let i = 0; i < numPages; i++) {
+        const pageStart = i * pageHeight
+        const pageEnd = pageStart + pageHeight
+
+        if (scrollTop >= pageStart && scrollTop < pageEnd) {
+          page = i + 1
+          break
+        }
+      }
+
+      if (page !== currentPageRef.current) {
+        currentPageRef.current = page
+        setCurrentPage(page)
+        updatePage(page)
+      }
+    }
+
+    container.addEventListener('scroll', handleScroll)
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll)
+    }
+  }, [numPages, pdfUrl])
+
+  useEffect(() => {
+    hasRestoredRef.current = false
+  }, [pdfUrl])
+
+  useEffect(() => {
+    if (!pdfUrl || !numPages) return
+    if (hasRestoredRef.current) return
+
+    hasRestoredRef.current = true
+    restorePdfState()
+  }, [pdfUrl, numPages])
+
+useEffect(() => {
+  let cancelled = false
+  const loadPdfWorker = async () => {
+    try {
+      const { pdfjs } = await import('react-pdf')
+      if (cancelled) return
+      pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
+    } catch (err) {
+      console.error('Failed to load PDF worker:', err)
+    }
+  }
+  loadPdfWorker()
+  return () => {
+    cancelled = true
+  }
+}, [])
+
+  useEffect(() => {
+    if (!pdfReady) return
+    if (!pdfContainerRef.current) return
+
+    const container = pdfContainerRef.current
+
+    const scrollValue = Number(0) 
+
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight * scrollValue
+    })
+  }, [pdfReady])
+
+  useEffect(() => {
+    if (!pdfUrl || !pdfContainerRef.current) return
+
+    const container = pdfContainerRef.current
+
+    const fitPdfToScreen = () => {
+      const containerWidth = container.clientWidth - 20
+      const baseWidth = 595
+      const newScale = containerWidth / baseWidth
+      setScale(newScale)
+    }
+
+    fitPdfToScreen()
+
+    const observer = new ResizeObserver(() => {
+      fitPdfToScreen()
+    })
+    observer.observe(container)
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [pdfUrl])
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploading(true)
+    setPdfFile(file)
+
+    try {
+      const fileName = `${Date.now()}_${file.name}`
+      const { data, error } = await supabase.storage.from('pdfs').upload(`students/${fileName}`, file)
+
+      if (error) {
+        console.error('Upload error:', error)
+        setUploading(false)
+        return
+      }
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from('pdfs').getPublicUrl(`students/${fileName}`)
+
+  setPdfUrl(publicUrl)
+      setUploading(false)
+
+      const { data: insertedRow, error: insertErr } = await supabase
+        .from('student_pdfs')
+        .insert({
+          student_number: studentNumber,
+          module_id: moduleId,
+          file_name: file.name,
+          file_url: publicUrl,
+        })
+        .select('pdf_id')
+        .single()
+
+      if (insertErr) {
+        console.error('Failed to save PDF record:', insertErr)
+      } else if (insertedRow) {
+        setPdfId(insertedRow.pdf_id)
+      }
+
+      await onUploaded()
+    } catch (error) {
+      console.error('Error uploading PDF:', error)
+      setUploading(false)
+    }
+  }
+
+  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+    setNumPages(numPages)
+    setTimeout(() => {
+      setPdfReady(true)
+    }, 150)
+  }
+
+  const zoomIn = () => {
+    setScale((prev) => {
+      const newScale = Math.min(prev + 0.1, 4.0)
+      saveZoomToDB(newScale)
+      return newScale
+    })
+  }
+
+  const zoomOut = () => {
+    setScale((prev) => {
+      const newScale = Math.max(prev - 0.1, 0.2)
+      saveZoomToDB(newScale)
+      return newScale
+    })
+  }
+
+const fitToScreen = () => {
+    if (!pdfContainerRef.current) return
+
+    const container = pdfContainerRef.current
+    const containerWidth = container.clientWidth - 20
+    const baseWidth = 595
+    const newScale = containerWidth / baseWidth
+    const maxScroll = container.scrollHeight - container.clientHeight
+    const scrollFraction = maxScroll > 0 ? container.scrollTop / maxScroll : 0
+
+    setScale(newScale)
+    saveZoomToDB(newScale)
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const newMaxScroll = container.scrollHeight - container.clientHeight
+        container.scrollTop = newMaxScroll * scrollFraction
+      })
+    })
+  }
+
+  const handleContainerScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+
+    const scrollValue = el.scrollTop / (el.scrollHeight - el.clientHeight)
+
+    scrollSaveRef.current = scrollValue
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current)
+    }
+
+    scrollTimeoutRef.current = setTimeout(() => {
+      saveScrollToDB(scrollSaveRef.current)
+    }, 1500)
+
+    console.log('SCROLL VALUE:', scrollSaveRef.current)
+  }
+
+const openDocumentFromHistory = async (doc: any) => {
+    setPdfUrl(doc.file_url)
+    setPdfId(doc.pdf_id)
+    setPdfFile({ name: doc.file_name } as File)
+
+const { data, error } = await supabase
+      .from('student_pdfs')
+      .select('last_page, zoom_level, scroll_position, rotation')
+      .eq('pdf_id', doc.pdf_id)
+      .single()
+
+    console.log('PDF STATE LOAD:', { data, error })
+
+    if (!error && data) {
+      console.log('Zoom from DB:', data.zoom_level)
+      console.log('Scroll from DB:', data.scroll_position)
+      console.log('Last page from DB:', data.last_page)
+
+    
+      if (data.zoom_level) {
+        setScale(Number(data.zoom_level))
+      }
+      setRotation(Number(data.rotation || 0))
+      setTimeout(() => {
+        const container = pdfContainerRef.current
+        console.log('PDF container:', container)
+
+        if (container) {
+          const scrollValue = Number(data.scroll_position || 0)
+
+          container.scrollTop = (container.scrollHeight - container.clientHeight) * scrollValue
+
+          console.log('SCROLL APPLIED:', scrollValue)
+        }
+      }, 800)
+    }
+
+    if (!error && data) {
+      if (data.zoom_level) {
+        setScale(Number(data.zoom_level))
+      }
+
+      const waitForPdf = setInterval(() => {
+        const container = pdfContainerRef.current
+
+        if (container) {
+          console.log('PDF ready â†’ applying state')
+
+          if (data.scroll_position) {
+            container.scrollTop = container.scrollHeight * Number(data.scroll_position)
+
+            console.log('Scroll applied:', container.scrollTop)
+          }
+
+          clearInterval(waitForPdf)
+        } else {
+          console.log('Waiting for PDF render...')
+        }
+      }, 200)
+    }
+
+    await supabase
+      .from('student_pdfs')
+      .update({ last_opened_at: new Date().toISOString() })
+      .eq('pdf_id', doc.pdf_id)
+  }
+
+  const completeExternalImport = (publicUrl: string, fileName: string, newPdfId: number) => {
+    setPdfUrl(publicUrl)
+    setPdfId(newPdfId)
+    setPdfFile({ name: fileName } as File)
+  }
+
+  return {
+    pdfUrl,
+    pdfFile,
+    uploading,
+    pdfId,
+    numPages,
+    scale,
+    rotation,
+    pdfReady,
+    showThumbnails,
+    setShowThumbnails,
+    pageThumbnails,
+    currentPage,
+    pdfContainerRef,
+    sidebarRef,
+    handleFileUpload,
+    onDocumentLoadSuccess,
+    generateThumbnails,
+    zoomIn,
+    zoomOut,
+    fitToScreen,
+    handleContainerScroll,
+    openDocumentFromHistory,
+    savePageToDB,
+    updatePage,
+    goToPage,
+    rotatePage , 
+    completeExternalImport,
+  }
+}
+
+========== hooks/useAiChat.ts ==========
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+
+export interface ChatMessage {
+  message_id: number
+  role: 'user' | 'assistant'
+  content: string
+  model: string | null
+  created_at: string
+}
+
+export function useAiChat(pdfUrl: string | null, model: string) {
+  const [pdfId, setPdfId] = useState<number | null>(null)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+  const [sending, setSending] = useState(false)
+
+  useEffect(() => {
+    const loadPdfIdAndHistory = async () => {
+      setMessages([])
+      setPdfId(null)
+
+      if (!pdfUrl) return
+
+      setLoadingHistory(true)
+
+      const { data: pdfRow } = await supabase
+        .from('student_pdfs')
+        .select('pdf_id')
+        .eq('file_url', pdfUrl)
+        .single()
+
+      if (!pdfRow) {
+        setLoadingHistory(false)
+        return
+      }
+
+      setPdfId(pdfRow.pdf_id)
+
+      const { data: rows } = await supabase
+        .from('pdf_chat_messages')
+        .select('message_id, role, content, model, created_at')
+        .eq('pdf_id', pdfRow.pdf_id)
+        .eq('model', model)
+        .order('created_at', { ascending: true })
+
+      if (rows) setMessages(rows as ChatMessage[])
+      setLoadingHistory(false)
+    }
+
+    loadPdfIdAndHistory()
+  }, [pdfUrl, model])
+
+  const sendMessage = async (text: string) => {
+    if (!pdfId || !text.trim()) return
+
+    setSending(true)
+
+    const optimisticUser: ChatMessage = {
+      message_id: -Date.now(),
+      role: 'user',
+      content: text,
+      model: null,
+      created_at: new Date().toISOString(),
+    }
+
+    const assistantId = -Date.now() - 1
+    const assistantMessage: ChatMessage = {
+      message_id: assistantId,
+      role: 'assistant',
+      content: '',
+      model,
+      created_at: new Date().toISOString(),
+    }
+
+    setMessages((prev) => [...prev, optimisticUser, assistantMessage])
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pdf_id: pdfId, message: text, model }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        console.error('Chat request failed:', data.error)
+        setMessages((prev) => prev.filter((m) => m !== optimisticUser && m !== assistantMessage))
+        return
+      }
+
+      if (!res.body) {
+        console.error('Chat request failed: no response body')
+        setMessages((prev) => prev.filter((m) => m !== optimisticUser && m !== assistantMessage))
+        return
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value, { stream: true })
+        if (!chunk) continue
+
+        setMessages((prev) =>
+          prev.map((m) => (m.message_id === assistantId ? { ...m, content: m.content + chunk } : m))
+        )
+      }
+    } catch (err) {
+      console.error('Chat request failed:', err)
+      setMessages((prev) => prev.filter((m) => m !== optimisticUser && m !== assistantMessage))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return { messages, loadingHistory, sending, sendMessage }
+}
+
+========== app/api/drive/import/route.ts ==========
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createSupabaseServerClient } from '@/lib/supabaseServer'
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { getValidDriveAccessToken } from '@/lib/googleDrive'
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = await createSupabaseServerClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!supabaseAdmin) {
+      console.error('Supabase admin client is not initialized')
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 },
+      )
+    }
+
+    const { data: student, error: studentError } = await supabaseAdmin
+      .from('students')
+      .select('student_number')
+      .eq('auth_user_id', user.id)
+      .maybeSingle()
+
+    if (studentError) {
+      console.error('Failed to resolve student:', studentError)
+      return NextResponse.json(
+        { error: 'Failed to verify student account' },
+        { status: 500 },
+      )
+    }
+
+    if (!student) {
+      return NextResponse.json(
+        { error: 'Student account not linked' },
+        { status: 403 },
+      )
+    }
+
+    let body: {
+      module_id?: unknown
+      file_id?: unknown
+      file_name?: unknown
+    }
+
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid JSON body' },
+        { status: 400 },
+      )
+    }
+
+    const { module_id, file_id } = body
+
+    const moduleId = Number(module_id)
+
+    if (
+      !Number.isSafeInteger(moduleId) ||
+      moduleId <= 0 ||
+      typeof file_id !== 'string' ||
+      !/^[a-zA-Z0-9_-]{10,200}$/.test(file_id)
+    ) {
+      return NextResponse.json(
+        { error: 'Invalid module_id or file_id' },
+        { status: 400 },
+      )
+    }
+
+    const { data: module, error: moduleError } = await supabaseAdmin
+      .from('modules')
+      .select('module_id')
+      .eq('module_id', moduleId)
+      .maybeSingle()
+
+    if (moduleError) {
+      console.error('Failed to verify module:', moduleError)
+      return NextResponse.json(
+        { error: 'Failed to verify module' },
+        { status: 500 },
+      )
+    }
+
+    if (!module) {
+      return NextResponse.json(
+        { error: 'Module not found' },
+        { status: 404 },
+      )
+    }
+
+    const accessToken = await getValidDriveAccessToken(
+      student.student_number,
+    )
+
+    if (!accessToken) {
+      return NextResponse.json(
+        { error: 'No valid Drive access for this student' },
+        { status: 401 },
+      )
+    }
+
+    // Verify the Drive file belongs to the student's connected Drive
+    // and that Google identifies it as a PDF.
+    const metadataResponse = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file_id)}?fields=id,name,mimeType,size,trashed`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: 'no-store',
+      },
+    )
+
+    if (!metadataResponse.ok) {
+      return NextResponse.json(
+        { error: 'Unable to access the selected Drive file' },
+        { status: 400 },
+      )
+    }
+
+    const metadata = await metadataResponse.json()
+
+    if (
+      metadata.id !== file_id ||
+      metadata.mimeType !== 'application/pdf' ||
+      metadata.trashed === true
+    ) {
+      return NextResponse.json(
+        { error: 'The selected Drive file is not a valid PDF' },
+        { status: 400 },
+      )
+    }
+
+    const maxFileSize = 25 * 1024 * 1024
+
+    if (
+      metadata.size !== undefined &&
+      Number(metadata.size) > maxFileSize
+    ) {
+      return NextResponse.json(
+        { error: 'PDF exceeds the 25 MB import limit' },
+        { status: 413 },
+      )
+    }
+
+    const driveResponse = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file_id)}?alt=media`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: 'no-store',
+      },
+    )
+
+    if (!driveResponse.ok) {
+      console.error(
+        'Drive download failed with status:',
+        driveResponse.status,
+      )
+      return NextResponse.json(
+        { error: 'Failed to download PDF from Drive' },
+        { status: 502 },
+      )
+    }
+
+    const fileBuffer = await driveResponse.arrayBuffer()
+
+    if (fileBuffer.byteLength > maxFileSize) {
+      return NextResponse.json(
+        { error: 'PDF exceeds the 25 MB import limit' },
+        { status: 413 },
+      )
+    }
+
+    const safeFileName = String(metadata.name || 'document.pdf')
+      .replace(/[\/\\]/g, '_')
+      .replace(/[\u0000-\u001f\u007f]/g, '_')
+      .slice(0, 180)
+
+    const storageFileName =
+      `students/${student.student_number}/${crypto.randomUUID()}.pdf`
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('pdfs')
+      .upload(storageFileName, Buffer.from(fileBuffer), {
+        contentType: 'application/pdf',
+        upsert: false,
+      })
+
+    if (uploadError) {
+      console.error('Storage upload failed:', uploadError)
+      return NextResponse.json(
+        { error: 'Failed to save PDF' },
+        { status: 500 },
+      )
+    }
+
+    const { data: publicUrlData } = supabaseAdmin.storage
+      .from('pdfs')
+      .getPublicUrl(storageFileName)
+
+    const { data: insertedRow, error: dbError } = await supabaseAdmin
+      .from('student_pdfs')
+      .insert({
+        student_number: student.student_number,
+        module_id: moduleId,
+        file_name: safeFileName,
+        file_url: publicUrlData.publicUrl,
+      })
+      .select('pdf_id')
+      .single()
+
+    if (dbError || !insertedRow) {
+      console.error('Failed to save PDF record:', dbError)
+
+      const { error: cleanupError } = await supabaseAdmin.storage
+        .from('pdfs')
+        .remove([storageFileName])
+
+      if (cleanupError) {
+        console.error('Failed to clean up uploaded PDF:', cleanupError)
+      }
+
+      return NextResponse.json(
+        { error: 'Failed to save PDF record' },
+        { status: 500 },
+      )
+    }
+
+    return NextResponse.json(
+      {
+        file_url: publicUrlData.publicUrl,
+        pdf_id: insertedRow.pdf_id,
+      },
+      {
+        headers: { 'Cache-Control': 'private, no-store' },
+      },
+    )
+  } catch (error) {
+    console.error('Drive import route failed:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 },
+    )
+  }
+}
+
+========== app/api/pdfs/delete/route.ts ==========
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createSupabaseServerClient } from '@/lib/supabaseServer'
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = await createSupabaseServerClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!supabaseAdmin) {
+      console.error('Supabase admin client is not initialized')
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 },
+      )
+    }
+
+    const { data: student, error: studentError } = await supabaseAdmin
+      .from('students')
+      .select('student_number')
+      .eq('auth_user_id', user.id)
+      .maybeSingle()
+
+    if (studentError) {
+      console.error('Failed to resolve student:', studentError)
+      return NextResponse.json(
+        { error: 'Failed to verify student account' },
+        { status: 500 },
+      )
+    }
+
+    if (!student) {
+      return NextResponse.json(
+        { error: 'Student account not linked' },
+        { status: 403 },
+      )
+    }
+
+    let body: { pdf_id?: unknown }
+
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid JSON body' },
+        { status: 400 },
+      )
+    }
+const pdfId = body.pdf_id
+
+if (typeof pdfId !== 'number' || !Number.isSafeInteger(pdfId) || pdfId <= 0) {
+      return NextResponse.json(
+        { error: 'Invalid pdf_id' },
+        { status: 400 },
+      )
+    }
+
+    const { data: pdfRow, error: fetchError } = await supabaseAdmin
+      .from('student_pdfs')
+      .select('file_url, student_number')
+      .eq('pdf_id', pdfId)
+      .eq('student_number', student.student_number)
+      .maybeSingle()
+
+    if (fetchError) {
+      console.error('Failed to retrieve PDF record:', fetchError)
+      return NextResponse.json(
+        { error: 'Failed to retrieve document' },
+        { status: 500 },
+      )
+    }
+
+    if (!pdfRow) {
+      return NextResponse.json(
+        { error: 'Document not found' },
+        { status: 404 },
+      )
+    }
+
+    let storagePath: string | null = null
+
+    try {
+      const fileUrl = new URL(pdfRow.file_url)
+      const expectedPrefix = '/storage/v1/object/public/pdfs/'
+
+      if (
+        fileUrl.protocol === 'https:' &&
+        fileUrl.pathname.includes(expectedPrefix)
+      ) {
+        const encodedPath = fileUrl.pathname.slice(
+          fileUrl.pathname.indexOf(expectedPrefix) +
+            expectedPrefix.length,
+        )
+
+        const decodedPath = decodeURIComponent(encodedPath)
+
+        const expectedFolder = `students/${student.student_number}/`
+
+        if (decodedPath.startsWith(expectedFolder)) {
+          storagePath = decodedPath
+        }
+      }
+    } catch {
+    }
+
+    const { data: deletedRows, error: deleteError } = await supabaseAdmin
+      .from('student_pdfs')
+      .delete()
+      .eq('pdf_id', pdfId)
+      .eq('student_number', student.student_number)
+      .select('pdf_id')
+
+    if (deleteError) {
+      console.error('Failed to delete PDF record:', deleteError)
+      return NextResponse.json(
+        { error: 'Failed to delete document' },
+        { status: 500 },
+      )
+    }
+
+    if (!deletedRows || deletedRows.length === 0) {
+      return NextResponse.json(
+        { error: 'Document not found' },
+        { status: 404 },
+      )
+    }
+
+    if (storagePath) {
+      const { error: storageError } = await supabaseAdmin.storage
+        .from('pdfs')
+        .remove([storagePath])
+
+      if (storageError) {
+        console.error(
+          'PDF record deleted, but storage cleanup failed:',
+          storageError,
+        )
+
+        return NextResponse.json({
+          success: true,
+          storage_cleanup_pending: true,
+        })
+      }
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('PDF deletion route failed:', error)
+
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 },
+    )
+  }
+}
+
+========== app/api/practice/explain/route.ts ==========
+
+import { NextResponse } from 'next/server'
+import { createSupabaseServerClient } from '@/lib/supabaseServer'
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { generateExplanation } from '@/lib/aiProviders/practiceGemini'
+
+export async function POST(request: Request) {
+  try {
+    const supabase = await createSupabaseServerClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!supabaseAdmin) {
+      console.error('âŒ Supabase Admin client is not initialized')
+      return NextResponse.json(
+        { error: 'Database connection error' },
+        { status: 500 }
+      )
+    }
+
+    const { data: student, error: studentErr } = await supabaseAdmin
+      .from('students')
+      .select('student_number')
+      .eq('auth_user_id', user.id)
+      .maybeSingle()
+
+    if (studentErr || !student) {
+      console.error('âŒ Failed to resolve authenticated student:', studentErr)
+      return NextResponse.json(
+        { error: 'Student account not found' },
+        { status: 403 }
+      )
+    }
+
+    let body: { question_id?: unknown }
+
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+
+    const question_id = Number(body.question_id)
+
+    if (!Number.isSafeInteger(question_id) || question_id <= 0) {
+      return NextResponse.json(
+        { error: 'A valid question_id is required' },
+        { status: 400 }
+      )
+    }
+
+    const { data: questionRow, error: questionErr } = await supabaseAdmin
+      .from('pdf_practice_questions')
+      .select('question_text, options, correct_answer, explanation, set_id')
+      .eq('question_id', question_id)
+      .maybeSingle()
+
+    if (questionErr || !questionRow) {
+      console.error('âŒ Failed to fetch practice question:', questionErr)
+      return NextResponse.json({ error: 'Question not found' }, { status: 404 })
+    }
+
+    const { data: setRow, error: setErr } = await supabaseAdmin
+      .from('pdf_practice_sets')
+      .select('pdf_id')
+      .eq('set_id', questionRow.set_id)
+      .maybeSingle()
+
+    if (setErr || !setRow) {
+      console.error('âŒ Failed to fetch practice set:', setErr)
+      return NextResponse.json({ error: 'Question not found' }, { status: 404 })
+    }
+
+    const { data: pdfRow, error: pdfErr } = await supabaseAdmin
+      .from('student_pdfs')
+      .select('file_url')
+      .eq('pdf_id', setRow.pdf_id)
+      .eq('student_number', student.student_number)
+      .maybeSingle()
+
+    if (pdfErr) {
+      console.error('âŒ Failed to verify PDF ownership:', pdfErr)
+      return NextResponse.json(
+        { error: 'Failed to verify PDF ownership' },
+        { status: 500 }
+      )
+    }
+
+    if (!pdfRow) {
+      return NextResponse.json({ error: 'Question not found' }, { status: 404 })
+    }
+
+    const { data: attemptRow, error: attemptErr } = await supabaseAdmin
+      .from('pdf_practice_attempts')
+      .select('attempt_id')
+      .eq('question_id', question_id)
+      .eq('student_number', student.student_number)
+      .limit(1)
+      .maybeSingle()
+
+    if (attemptErr) {
+      console.error('âŒ Failed to verify practice attempt:', attemptErr)
+      return NextResponse.json(
+        { error: 'Failed to verify practice attempt' },
+        { status: 500 }
+      )
+    }
+
+    if (!attemptRow) {
+      return NextResponse.json(
+        { error: 'Submit an answer before requesting an explanation' },
+        { status: 403 }
+      )
+    }
+
+    if (questionRow.explanation?.trim()) {
+      return NextResponse.json(
+        { explanation: questionRow.explanation },
+        { headers: { 'Cache-Control': 'private, no-store' } }
+      )
+    }
+
+    let explanation: string
+
+    try {
+      explanation = await generateExplanation({
+        geminiFileUri: pdfRow.file_url,
+        questionText: questionRow.question_text,
+        options: questionRow.options as string[],
+        correctAnswer: questionRow.correct_answer,
+      })
+
+      if (typeof explanation !== 'string' || !explanation.trim()) {
+        console.error('âŒ Explanation generation returned an empty result')
+        return NextResponse.json(
+          { error: 'Failed to generate explanation' },
+          { status: 502 }
+        )
+      }
+    } catch (err) {
+      console.error('âŒ Explanation generation failed:', err)
+
+      if (err instanceof Error && err.message === 'QUOTA_EXCEEDED') {
+        return NextResponse.json(
+          { error: 'Daily AI limit reached â€” try again tomorrow.' },
+          { status: 429 }
+        )
+      }
+
+      if (err instanceof Error && err.message === 'MODEL_OVERLOADED') {
+        return NextResponse.json(
+          { error: 'Gemini is under heavy load right now â€” try again in a minute or two.' },
+          { status: 503 }
+        )
+      }
+
+      return NextResponse.json(
+        { error: 'AI request failed, please try again' },
+        { status: 502 }
+      )
+    }
+
+    const cleanedExplanation = explanation.trim()
+
+    const { data: updatedQuestion, error: updateErr } = await supabaseAdmin
+      .from('pdf_practice_questions')
+      .update({ explanation: cleanedExplanation })
+      .eq('question_id', question_id)
+      .eq('set_id', questionRow.set_id)
+      .select('question_id')
+      .maybeSingle()
+
+    if (updateErr || !updatedQuestion) {
+      console.error('âŒ Failed to save explanation:', updateErr)
+      return NextResponse.json(
+        { error: 'Failed to save explanation' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json(
+      { explanation: cleanedExplanation },
+      { headers: { 'Cache-Control': 'private, no-store' } }
+    )
+  } catch (error) {
+    console.error('âŒ API error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+========== app/api/practice/generate/route.ts ==========
+
+import { NextResponse } from 'next/server'
+import { createSupabaseServerClient } from '@/lib/supabaseServer'
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import {
+  generateMcqSet,
+  PRACTICE_MODEL,
+} from '@/lib/aiProviders/practiceGemini'
+
+export async function POST(request: Request) {
+  try {
+    const supabase = await createSupabaseServerClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!supabaseAdmin) {
+      console.error('âŒ Supabase Admin client is not initialized')
+      return NextResponse.json(
+        { error: 'Database connection error' },
+        { status: 500 }
+      )
+    }
+
+    const { data: student, error: studentErr } = await supabaseAdmin
+      .from('students')
+      .select('student_number')
+      .eq('auth_user_id', user.id)
+      .maybeSingle()
+
+    if (studentErr || !student) {
+      console.error('âŒ Failed to resolve authenticated student:', studentErr)
+      return NextResponse.json(
+        { error: 'Student account not found' },
+        { status: 403 }
+      )
+    }
+
+    let body: {
+      pdf_id?: unknown
+      bucket_start_page?: unknown
+      bucket_end_page?: unknown
+    }
+
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+
+    const pdf_id = Number(body.pdf_id)
+    const bucket_start_page = Number(body.bucket_start_page)
+    const bucket_end_page = Number(body.bucket_end_page)
+
+    if (
+      !Number.isSafeInteger(pdf_id) ||
+      pdf_id <= 0 ||
+      !Number.isSafeInteger(bucket_start_page) ||
+      !Number.isSafeInteger(bucket_end_page) ||
+      bucket_start_page < 1 ||
+      bucket_end_page < bucket_start_page ||
+      bucket_end_page - bucket_start_page > 49
+    ) {
+      return NextResponse.json(
+        { error: 'Valid PDF ID and page range are required (maximum 50 pages)' },
+        { status: 400 }
+      )
+    }
+
+    const { data: pdfRow, error: pdfErr } = await supabaseAdmin
+      .from('student_pdfs')
+      .select('file_url')
+      .eq('pdf_id', pdf_id)
+      .eq('student_number', student.student_number)
+      .maybeSingle()
+
+    if (pdfErr) {
+      console.error('âŒ Failed to verify PDF ownership:', pdfErr)
+      return NextResponse.json(
+        { error: 'Failed to verify PDF ownership' },
+        { status: 500 }
+      )
+    }
+
+    if (!pdfRow) {
+      return NextResponse.json({ error: 'PDF not found' }, { status: 404 })
+    }
+
+    let questions
+
+    try {
+      questions = await generateMcqSet({
+        geminiFileUri: pdfRow.file_url,
+        bucketStartPage: bucket_start_page,
+        bucketEndPage: bucket_end_page,
+      })
+    } catch (err) {
+      console.error('âŒ MCQ generation failed:', err)
+
+      if (err instanceof Error && err.message === 'QUOTA_EXCEEDED') {
+        return NextResponse.json(
+          { error: 'Daily AI limit reached â€” try again tomorrow.' },
+          { status: 429 }
+        )
+      }
+
+      if (err instanceof Error && err.message === 'MODEL_OVERLOADED') {
+        return NextResponse.json(
+          { error: 'Gemini is under heavy load right now â€” try again in a minute or two.' },
+          { status: 503 }
+        )
+      }
+
+      return NextResponse.json(
+        { error: 'AI request failed, please try again' },
+        { status: 502 }
+      )
+    }
+
+    if (!questions.length) {
+      return NextResponse.json(
+        { error: 'No questions were generated' },
+        { status: 502 }
+      )
+    }
+
+    const { data: setRow, error: setErr } = await supabaseAdmin
+      .from('pdf_practice_sets')
+      .insert({
+        pdf_id,
+        bucket_start_page,
+        bucket_end_page,
+        model: PRACTICE_MODEL,
+      })
+      .select('set_id, pdf_id, bucket_start_page, bucket_end_page, model, created_at')
+      .single()
+
+    if (setErr || !setRow) {
+      console.error('âŒ Failed to save practice set:', setErr)
+      return NextResponse.json(
+        { error: 'Failed to save practice set' },
+        { status: 500 }
+      )
+    }
+
+    const { data: questionRows, error: questionsErr } = await supabaseAdmin
+      .from('pdf_practice_questions')
+      .insert(
+        questions.map((q) => ({
+          set_id: setRow.set_id,
+          question_text: q.question_text,
+          options: q.options,
+          correct_answer: q.correct_answer,
+        }))
+      )
+      .select('question_id, question_text, options, created_at')
+
+    if (questionsErr || !questionRows) {
+      console.error('âŒ Failed to save practice questions:', questionsErr)
+
+      const { error: cleanupErr } = await supabaseAdmin
+        .from('pdf_practice_sets')
+        .delete()
+        .eq('set_id', setRow.set_id)
+
+      if (cleanupErr) {
+        console.error('âŒ Failed to clean up practice set:', cleanupErr)
+      }
+
+      return NextResponse.json(
+        { error: 'Failed to save practice questions' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json(
+      {
+        ...setRow,
+        pdf_practice_questions: questionRows.map((question) => ({
+          ...question,
+          explanation: null,
+          pdf_practice_attempts: [],
+        })),
+      },
+      { headers: { 'Cache-Control': 'private, no-store' } }
+    )
+  } catch (error) {
+    console.error('âŒ API error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+========== app/api/videos/generate/route.ts ==========
+import { NextResponse } from 'next/server'
+import { createSupabaseServerClient } from '@/lib/supabaseServer'
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { getOrRefreshPracticeFileUri, PRACTICE_MODEL } from '@/lib/aiProviders/practiceGemini'
+import { generateVideoTopics } from '@/lib/aiProviders/videoTopics'
+import { searchEducationalVideos } from '@/lib/aiProviders/youtubeVideos'
+import { extractPdfPages, scoreVideos, type MatchResult } from '@/lib/aiProviders/videoMatch'
+
+export async function POST(request: Request) {
+  try {
+    const supabase = await createSupabaseServerClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!supabaseAdmin) {
+      console.error('âŒ Supabase Admin client is not initialized')
+      return NextResponse.json({ error: 'Database connection error' }, { status: 500 })
+    }
+
+    const { data: student, error: studentErr } = await supabaseAdmin
+      .from('students')
+      .select('student_number')
+      .eq('auth_user_id', user.id)
+      .maybeSingle()
+
+    if (studentErr || !student) {
+      console.error('âŒ Failed to resolve authenticated student:', studentErr)
+      return NextResponse.json({ error: 'Student account not found' }, { status: 403 })
+    }
+
+    const body = await request.json()
+    const { pdf_id, bucket_start_page, bucket_end_page } = body
+
+    if (
+      !Number.isSafeInteger(pdf_id) ||
+      pdf_id <= 0 ||
+      !Number.isSafeInteger(bucket_start_page) ||
+      !Number.isSafeInteger(bucket_end_page) ||
+      bucket_start_page < 1 ||
+      bucket_end_page < bucket_start_page ||
+      bucket_end_page - bucket_start_page + 1 > 50
+    ) {
+      return NextResponse.json(
+        { error: 'Valid pdf_id and page range of at most 50 pages are required' },
+        { status: 400 }
+      )
+    }
+
+    const { data: pdfRow, error: pdfErr } = await supabaseAdmin
+      .from('student_pdfs')
+      .select('pdf_id, file_url')
+      .eq('pdf_id', pdf_id)
+      .eq('student_number', student.student_number)
+      .maybeSingle()
+
+    if (pdfErr) {
+      console.error('âŒ Failed to verify PDF ownership:', pdfErr)
+      return NextResponse.json({ error: 'Failed to verify PDF ownership' }, { status: 500 })
+    }
+
+    if (!pdfRow) {
+      return NextResponse.json({ error: 'PDF not found' }, { status: 404 })
+    }
+
+    let topics: string[]
+    let videos
+
+    try {
+      const geminiFileUri = await getOrRefreshPracticeFileUri(pdf_id, pdfRow.file_url)
+
+      topics = await generateVideoTopics({
+        geminiFileUri,
+        bucketStartPage: bucket_start_page,
+        bucketEndPage: bucket_end_page,
+      })
+
+      videos = await searchEducationalVideos(topics)
+    } catch (err) {
+      console.error('âŒ Video recommendation generation failed:', err)
+
+      if (err instanceof Error && err.message === 'QUOTA_EXCEEDED') {
+        return NextResponse.json(
+          { error: 'Daily AI limit reached â€” try again tomorrow.' },
+          { status: 429 }
+        )
+      }
+
+      if (err instanceof Error && err.message === 'MODEL_OVERLOADED') {
+        return NextResponse.json(
+          { error: 'Gemini is under heavy load right now â€” try again in a minute or two.' },
+          { status: 503 }
+        )
+      }
+
+      return NextResponse.json({ error: 'Failed to find videos, please try again' }, { status: 502 })
+    }
+
+    if (!videos.length) {
+      return NextResponse.json({ error: 'No matching videos were found' }, { status: 404 })
+    }
+
+    let matchScores = new Map<string, MatchResult>()
+
+    try {
+      const pages = await extractPdfPages(pdfRow.file_url, bucket_end_page)
+      matchScores = await scoreVideos(
+        videos.map((v) => ({ id: v.id, durationSeconds: v.durationSeconds })),
+        pages,
+        bucket_start_page,
+        bucket_end_page
+      )
+
+      matchScores.forEach((score, id) => {
+        console.log('[video-match]', id, JSON.stringify(score))
+      })
+    } catch (err) {
+      console.error('âš ï¸ Video match scoring failed:', err)
+    }
+
+    const { data: batchRow, error: batchErr } = await supabaseAdmin
+      .from('pdf_video_batches')
+      .insert({
+        pdf_id,
+        bucket_start_page,
+        bucket_end_page,
+        model: PRACTICE_MODEL,
+      })
+      .select('batch_id, pdf_id, bucket_start_page, bucket_end_page, created_at')
+      .single()
+
+    if (batchErr || !batchRow) {
+      console.error('âŒ Failed to save video batch:', batchErr)
+      return NextResponse.json({ error: 'Failed to save video results' }, { status: 500 })
+    }
+
+    const { data: videoRows, error: videosErr } = await supabaseAdmin
+      .from('pdf_video_recommendations')
+      .insert(
+        videos.map((v) => ({
+          batch_id: batchRow.batch_id,
+          video_id: v.id,
+          title: v.title,
+          channel_title: v.channelTitle,
+          thumbnail_url: v.thumbnail,
+          description: v.description,
+          duration_seconds: v.durationSeconds,
+          match_percent: matchScores.get(v.id)?.matchPercent ?? null,
+          keyword_percent: matchScores.get(v.id)?.keywordPercent ?? null,
+          semantic_percent: matchScores.get(v.id)?.semanticPercent ?? null,
+          best_start_seconds: matchScores.get(v.id)?.bestStartSeconds ?? null,
+          best_end_seconds: matchScores.get(v.id)?.bestEndSeconds ?? null,
+          topic: v.topic,
+        }))
+      )
+      .select('video_id, title, channel_title, thumbnail_url, description, duration_seconds, match_percent, keyword_percent, semantic_percent, best_start_seconds, best_end_seconds, topic')
+
+    if (videosErr || !videoRows) {
+      console.error('âŒ Failed to save video recommendations:', videosErr)
+      return NextResponse.json({ error: 'Failed to save video results' }, { status: 500 })
+    }
+
+    return NextResponse.json(
+      {
+        ...batchRow,
+        topics,
+        videos: videoRows,
+      },
+      { headers: { 'Cache-Control': 'private, no-store' } }
+    )
+  } catch (error) {
+    console.error('âŒ API error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}

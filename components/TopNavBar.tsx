@@ -186,17 +186,16 @@ export default function TopNavBar({
               onMouseLeave={handleMusicMouseLeave}
               style={{
                 position: 'absolute',
-                top: '40px',
+                top: '44px',
                 left: '0',
-                backgroundColor: 'rgba(0,0,0,0.95)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: '12px',
-                width: '380px',
-                maxHeight: '500px',
-                padding: '16px',
+                backgroundColor: '#121212',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '16px',
+                width: '400px',
+                maxHeight: '640px',
+                padding: 0,
                 zIndex: 999,
-                boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
-                backdropFilter: 'blur(20px)',
+                boxShadow: '0 24px 70px rgba(0,0,0,0.85)',
                 overflow: 'hidden',
               }}
             >

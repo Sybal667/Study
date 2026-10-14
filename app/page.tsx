@@ -36,7 +36,7 @@ export default function HomePage() {
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundImage: "url('/signupbackground.png')",
+        backgroundImage: "url('/signupbackground.jpg.jpeg')",
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
@@ -53,32 +53,32 @@ export default function HomePage() {
           backgroundColor: 'transparent',
           backdropFilter: 'blur(6px)',
           textAlign: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
         }}
       >
         <h1 style={{ fontSize: '55px', marginBottom: '20px' }}>
-          Study Hub
+          Study
         </h1>
 
         <p style={{ fontSize: '18px', marginBottom: '40px', opacity: 0.9 }}>
-          A platform for Wits students to connect, share, and explore opportunities.
+         All your study tools in one place. Read, annotate, take notes, practise with AI, and stay focused.
         </p>
 
         <button onClick={() => router.push('/logIn')} style={buttonStyle}>
           Login
         </button>
 
-        <br /><br />
-
-        <button onClick={() => router.push('/signup')} style={buttonStyle}>
+        <button onClick={() => router.push('/signup')} style={{ ...buttonStyle, marginTop: '20px' }}>
           Sign Up
         </button>
-
-        <br /><br />
 
         <button
           onClick={signInWithGoogle}
           style={{
             ...buttonStyle,
+            marginTop: '20px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

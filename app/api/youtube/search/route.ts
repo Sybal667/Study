@@ -30,11 +30,19 @@ export async function GET(req: NextRequest) {
 
   const data = await res.json()
 
+  const decode = (str: string) =>
+    str
+      .replace(/&amp;/g, '&')
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+
   const results = data.items.map((item: any) => ({
     id: item.id.videoId,
-    title: item.snippet.title,
-    artist: item.snippet.channelTitle,
-    thumbnail: item.snippet.thumbnails?.default?.url,
+    title: decode(item.snippet.title),
+    artist: decode(item.snippet.channelTitle),
+    thumbnail: item.snippet.thumbnails?.medium?.url ?? item.snippet.thumbnails?.default?.url,
   }))
 
   return NextResponse.json({ results })

@@ -149,7 +149,7 @@ export default function OnboardingPage() {
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundImage: "url('/signupbackground.png')",
+        backgroundImage: "url('/signupbackground.jpg.jpeg')",
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
@@ -176,7 +176,7 @@ export default function OnboardingPage() {
             marginBottom: '50px',
           }}
         >
-          Welcome To Wits Study
+          Let's Get To Know You
         </h1>
 
         <div
@@ -185,7 +185,7 @@ export default function OnboardingPage() {
             marginBottom: '50px',
           }}
         >
-          <h3>Tell us about yourself</h3>
+          <h3>Tell us about what you are studying</h3>
           <p style={{ opacity: 0.8 }}>
             Select your faculty, degree, and year of study.
           </p>
