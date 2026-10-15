@@ -156,6 +156,9 @@ export default function StudyPage() {
           highlightMode={highlightMode}
           onToggleHighlightMode={() => setHighlightMode((prev) => !prev)}
           onExport={handleExport}
+          currentPage={currentPage}
+          numPages={numPages}
+          onGoToPage={goToPage}
         />
       )}
 
