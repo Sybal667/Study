@@ -14,6 +14,25 @@ type Degree = {
   degree_name: string
 }
 
+type Specialization = {
+  specialization_id: number
+  specialization_name: string
+  starts_year_level: number
+}
+
+// Degrees where a student may pick MORE than one specialisation (e.g. two majors).
+// Every other degree with specialisations lets the student pick exactly one.
+const MULTI_SPECIALIZATION_DEGREES = [33, 46]
+
+const DEFAULT_MAX_YEAR = 4
+
+function yearLabel(n: number) {
+  if (n === 1) return '1st Year'
+  if (n === 2) return '2nd Year'
+  if (n === 3) return '3rd Year'
+  return `${n}th Year`
+}
+
 export default function OnboardingPage() {
   const router = useRouter()
   const [faculties, setFaculties] = useState<Faculty[]>([])
@@ -22,6 +41,9 @@ export default function OnboardingPage() {
   const [selectedFaculty, setSelectedFaculty] = useState<number | null>(null)
   const [selectedDegree, setSelectedDegree] = useState<number | null>(null)
   const [selectedYear, setSelectedYear] = useState('')
+  const [maxYear, setMaxYear] = useState(DEFAULT_MAX_YEAR)
+  const [specializations, setSpecializations] = useState<Specialization[]>([])
+  const [selectedSpecs, setSelectedSpecs] = useState<number[]>([])
 
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
@@ -64,6 +86,9 @@ export default function OnboardingPage() {
     setSelectedFaculty(facultyId)
     setSelectedDegree(null)
     setSelectedYear('')
+    setSpecializations([])
+    setSelectedSpecs([])
+    setMaxYear(DEFAULT_MAX_YEAR)
     setMessage('')
 
     const { data, error } = await supabase
@@ -77,6 +102,47 @@ export default function OnboardingPage() {
     } else {
       console.error('Error fetching degrees:', error)
       setMessage('Failed to load degrees. Please refresh or report issue.')
+    }
+  }
+
+  // How many years does this degree have? Use the highest year that has modules.
+  async function loadMaxYear(degreeId: number) {
+    const { data } = await supabase
+      .from('degree_modules')
+      .select('year_level')
+      .eq('degree_id', degreeId)
+      .order('year_level', { ascending: false })
+      .limit(1)
+
+    const top = data && data.length > 0 ? data[0].year_level : 0
+    setMaxYear(Math.max(DEFAULT_MAX_YEAR, top))
+  }
+
+  // Which specialisations does this degree offer at the chosen year?
+  async function loadSpecializations(degreeId: number, year: number) {
+    const { data, error } = await supabase
+      .from('degree_specializations')
+      .select('specialization_id, specialization_name, starts_year_level')
+      .eq('degree_id', degreeId)
+      .lte('starts_year_level', year)
+      .order('specialization_name')
+
+    if (error) {
+      console.error('Error fetching specialisations:', error)
+      setSpecializations([])
+      return
+    }
+    setSpecializations(data ?? [])
+  }
+
+  function toggleSpecialization(id: number) {
+    setMessage('')
+    if (selectedDegree && MULTI_SPECIALIZATION_DEGREES.includes(selectedDegree)) {
+      setSelectedSpecs((prev) =>
+        prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+      )
+    } else {
+      setSelectedSpecs([id])
     }
   }
 
@@ -102,6 +168,12 @@ export default function OnboardingPage() {
       return
     }
 
+    if (specializations.length > 0 && selectedSpecs.length === 0) {
+      setMessage('Please choose your specialisation.')
+      setLoading(false)
+      return
+    }
+
     const { data: { user } } = await supabase.auth.getUser()
     if (!user?.email) {
       setMessage('User not found. Please sign in again.')
@@ -118,6 +190,8 @@ export default function OnboardingPage() {
         .update({
           degree_id: selectedDegree,
           current_year: Number(selectedYear),
+          // first choice kept here for older code; the full list lives in student_specializations
+          specialization_id: selectedSpecs.length > 0 ? selectedSpecs[0] : null,
         })
         .eq('student_number', studentNum)
 
@@ -126,6 +200,37 @@ export default function OnboardingPage() {
         setMessage(`Error updating student record: ${updateError.message}`)
         setLoading(false)
         return
+      }
+
+      // Replace the student's specialisation choices with the new ones
+      const { error: clearError } = await supabase
+        .from('student_specializations')
+        .delete()
+        .eq('student_number', studentNum)
+
+      if (clearError) {
+        console.error('Clear specialisations error:', clearError)
+        setMessage(`Error saving specialisation: ${clearError.message}`)
+        setLoading(false)
+        return
+      }
+
+      if (selectedSpecs.length > 0) {
+        const { error: specError } = await supabase
+          .from('student_specializations')
+          .insert(
+            selectedSpecs.map((id) => ({
+              student_number: studentNum,
+              specialization_id: id,
+            }))
+          )
+
+        if (specError) {
+          console.error('Save specialisations error:', specError)
+          setMessage(`Error saving specialisation: ${specError.message}`)
+          setLoading(false)
+          return
+        }
       }
 
       setMessage('✅ Onboarding complete! Redirecting...')
@@ -149,7 +254,7 @@ export default function OnboardingPage() {
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundImage: "url('/signupbackground.jpg.jpeg')",
+        backgroundImage: "url('/signupbackground.png')",
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
@@ -176,7 +281,7 @@ export default function OnboardingPage() {
             marginBottom: '50px',
           }}
         >
-          Let's Get To Know You
+          Welcome To Wits Study
         </h1>
 
         <div
@@ -185,7 +290,7 @@ export default function OnboardingPage() {
             marginBottom: '50px',
           }}
         >
-          <h3>Tell us about what you are studying</h3>
+          <h3>Tell us about yourself</h3>
           <p style={{ opacity: 0.8 }}>
             Select your faculty, degree, and year of study.
           </p>
@@ -234,6 +339,10 @@ export default function OnboardingPage() {
                     key={degree.degree_id}
                     onClick={() => {
                       setSelectedDegree(degree.degree_id)
+                      setSelectedYear('')
+                      setSpecializations([])
+                      setSelectedSpecs([])
+                      loadMaxYear(degree.degree_id)
                     }}
                     style={{
                       ...buttonStyle,
@@ -259,30 +368,70 @@ export default function OnboardingPage() {
               <select
                 value={selectedYear}
                 onChange={(e) => {
-                  setSelectedYear(e.target.value)
+                  const value = e.target.value
+                  setSelectedYear(value)
+                  setSelectedSpecs([])
                   setMessage('')
+                  if (value && selectedDegree) {
+                    loadSpecializations(selectedDegree, Number(value))
+                  } else {
+                    setSpecializations([])
+                  }
                 }}
                 style={selectStyle}
               >
                 <option value="" style={{ backgroundColor: '#222', color: 'white' }}>
                   Select Year
                 </option>
-                <option value="1" style={{ backgroundColor: '#222', color: 'white' }}>
-                  1st Year
-                </option>
-                <option value="2" style={{ backgroundColor: '#222', color: 'white' }}>
-                  2nd Year
-                </option>
-                <option value="3" style={{ backgroundColor: '#222', color: 'white' }}>
-                  3rd Year
-                </option>
-                <option value="4" style={{ backgroundColor: '#222', color: 'white' }}>
-                  4th Year
-                </option>
+                {Array.from({ length: maxYear }, (_, i) => i + 1).map((y) => (
+                  <option
+                    key={y}
+                    value={String(y)}
+                    style={{ backgroundColor: '#222', color: 'white' }}
+                  >
+                    {yearLabel(y)}
+                  </option>
+                ))}
               </select>
             </div>
           )}
         </div>
+
+        {selectedYear && specializations.length > 0 && (
+          <div style={{ marginTop: '40px', paddingBottom: '90px' }}>
+            <h3>
+              {selectedDegree && MULTI_SPECIALIZATION_DEGREES.includes(selectedDegree)
+                ? 'Choose your specialisations (you can pick more than one)'
+                : 'Choose your specialisation'}
+            </h3>
+            <p style={{ opacity: 0.8, marginTop: 0 }}>
+              Your modules will depend on what you choose here.
+            </p>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                gap: '10px',
+              }}
+            >
+              {specializations.map((spec) => (
+                <button
+                  key={spec.specialization_id}
+                  onClick={() => toggleSpecialization(spec.specialization_id)}
+                  style={{
+                    ...buttonStyle,
+                    marginBottom: 0,
+                    backgroundColor: selectedSpecs.includes(spec.specialization_id)
+                      ? 'blue'
+                      : 'rgba(255,255,255,0.1)',
+                  }}
+                >
+                  {spec.specialization_name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {selectedYear && (
           <button

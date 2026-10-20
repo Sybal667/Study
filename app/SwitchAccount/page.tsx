@@ -98,7 +98,7 @@ export default function SwitchAccountPage() {
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundImage: "url('/signupbackground.png')",
+        backgroundImage: "url('/signupbackground.jpg.jpeg')",
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
@@ -213,9 +213,9 @@ export default function SwitchAccountPage() {
         </button>
 
         <p style={{ marginTop: '20px', fontSize: '14px' }}>
-          Go back to{' '}
-          <a href="/login" style={{ color: '#0070f3', textDecoration: 'none' }}>
-            regular login
+          Or...{' '}
+          <a href="/signup" style={{ color: '#0070f3', textDecoration: 'none' }}>
+            sign up
           </a>
         </p>
       </form>

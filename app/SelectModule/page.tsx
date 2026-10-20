@@ -16,6 +16,7 @@ type StudentInfo = {
   degree_name: string
   current_year: number
   degree_id: number
+  specializations: string[]
 }
 
 export default function SelectModule() {
@@ -67,6 +68,7 @@ export default function SelectModule() {
           full_name,
           current_year,
           degree_id,
+          specialization_id,
           degrees (
           degree_name
           )
@@ -90,19 +92,51 @@ export default function SelectModule() {
         return
       }
 
+      const { data: offered } = await supabase
+        .from('degree_specializations')
+        .select('specialization_id, specialization_name')
+        .eq('degree_id', studentData.degree_id)
+        .lte('starts_year_level', studentData.current_year)
+
+      const { data: chosenRows } = await supabase
+        .from('student_specializations')
+        .select('specialization_id')
+        .eq('student_number', studentNum)
+
+      const offeredIds = (offered ?? []).map((s: any) => s.specialization_id as number)
+      let chosenIds = (chosenRows ?? [])
+        .map((r: any) => r.specialization_id as number)
+        .filter((id) => offeredIds.includes(id))
+
+      if (chosenIds.length === 0 && studentData.specialization_id && offeredIds.includes(studentData.specialization_id)) {
+        chosenIds = [studentData.specialization_id]
+      }
+
+      if (offeredIds.length > 0 && chosenIds.length === 0) {
+        router.push('/LandingPage')
+        return
+      }
+
+      const chosenNames = (offered ?? [])
+        .filter((s: any) => chosenIds.includes(s.specialization_id))
+        .map((s: any) => s.specialization_name as string)
+
       const degreeObj = studentData.degrees as any
       setStudentInfo({
         full_name: studentData.full_name,
         degree_name: degreeObj?.degree_name || 'Your Degree',
         current_year: studentData.current_year,
-        degree_id: studentData.degree_id
+        degree_id: studentData.degree_id,
+        specializations: chosenNames,
       })
 
       console.log('🔍 Querying degree_modules with:')
       console.log('degree_id:', studentData.degree_id)
       console.log('year_level:', studentData.current_year)
+      console.log('specializations:', chosenIds)
 
-      const { data: moduleData, error: moduleError } = await supabase
+      
+      let moduleQuery = supabase
         .from('degree_modules')
         .select(`
           semester,
@@ -115,6 +149,12 @@ export default function SelectModule() {
         .eq('degree_id', studentData.degree_id)
         .eq('year_level', studentData.current_year)
 
+      moduleQuery = chosenIds.length > 0
+        ? moduleQuery.or(`specialization_id.is.null,specialization_id.in.(${chosenIds.join(',')})`)
+        : moduleQuery.is('specialization_id', null)
+
+      const { data: moduleData, error: moduleError } = await moduleQuery
+
       console.log('📦 Module Data:', moduleData)
       console.log('❌ Module Error:', moduleError)
 
@@ -126,22 +166,29 @@ export default function SelectModule() {
       }
 
       if (moduleData && moduleData.length > 0) {
-        const formattedModules: Module[] = moduleData.map((dm: any) => ({
-          module_id: dm.modules.module_id,
-          module_code: dm.modules.module_code,
-          module_name: dm.modules.module_name,
-          semester: dm.semester || 'F'
-        }))
+        const seen = new Set<number>()
+        const formattedModules: Module[] = []
+        for (const dm of moduleData as any[]) {
+          if (!dm.modules || seen.has(dm.modules.module_id)) continue
+          seen.add(dm.modules.module_id)
+          formattedModules.push({
+            module_id: dm.modules.module_id,
+            module_code: dm.modules.module_code,
+            module_name: dm.modules.module_name,
+            semester: dm.semester || 'F'
+          })
+        }
+        formattedModules.sort((a, b) => a.module_code.localeCompare(b.module_code))
         setModules(formattedModules)
         console.log('✅ Formatted Modules:', formattedModules)
       } else {
         setModules([])
-        setErrorMsg('No modules found for your degree and year level.')
+        setErrorMsg('No modules found for your degree and year level.PLease Contact me on whatsapp :069 343 0230 or email me at 2836545@students.wits.ac.za with the screenshot of tis page')
       }
 
     } catch (err: any) {
       console.error('Error loading modules:', err)
-      setErrorMsg('Failed to load your modules. Please try again.')
+      setErrorMsg('Failed to load your modules. Please try again and if it still fails, contact me on whatsapp :069 343 0230 or email me at 2836545@students.wits.ac.za')
     } finally {
       setLoading(false)
     }
@@ -149,7 +196,6 @@ export default function SelectModule() {
 
   const handleLogout = async () => {
     try {
-      // Close the current session
       const { error } = await supabase.auth.signOut()
       
       if (error) {
@@ -188,15 +234,24 @@ export default function SelectModule() {
     <div style={containerStyle}>
       <div style={glassCardStyle}>
         
-        {/* Header Section */}
         <div style={headerStyle}>
           <div>
             <h1 style={titleStyle}>
-          {studentInfo?.full_name || 'Student'} 
+              Welcome back, {studentInfo?.full_name || 'Student'} 👋
             </h1>
             <p style={subtitleStyle}>
               {studentInfo?.degree_name} • Year {studentInfo?.current_year}
+              {studentInfo && studentInfo.specializations.length > 0 &&
+                ` • ${studentInfo.specializations.join(', ')}`}
             </p>
+            {studentInfo && studentInfo.specializations.length > 0 && (
+              <button
+                onClick={() => router.push('/LandingPage')}
+                style={{ background: 'none', border: 'none', color: 'white', opacity: 0.7, cursor: 'pointer', padding: 0, marginTop: '6px', textDecoration: 'underline', fontSize: '13px' }}
+              >
+                Change specialisation
+              </button>
+            )}
           </div>
           <button 
             onClick={handleLogout}
@@ -206,26 +261,24 @@ export default function SelectModule() {
           </button>
         </div>
 
-        {/* Error Message , the most important */}
         {errorMsg && (
           <div style={errorContainerStyle}>
             <p style={errorTextStyle}>{errorMsg}</p>
           </div>
         )}
-
-        {/* Modules Grid */}
         <div style={modulesSectionStyle}>
           <div style={modulesHeaderStyle}>
-            <h2 style={modulesTitleStyle}>Let's choose the module we want to study for ⬇️ </h2>
+            <h2 style={modulesTitleStyle}>Your Modules</h2>
             <span style={moduleCountStyle}>
               {modules.length} module{modules.length !== 1 ? 's' : ''}
             </span>
           </div>
+
           {modules.length === 0 ? (
             <div style={emptyStateStyle}>
-              <p>📚 No modules found</p>
+              <p> No modules found🙆</p>
               <p style={{ fontSize: '14px', opacity: 0.6, marginTop: '10px' }}>
-                Please contact Mokoena Mohau (069 343 0230) with the Degree + YOS 
+                Please contact me on whatsapp :069 343 0230 or email me at 2836545@students.wits.ac.za with the screenshot of this page and your degree name .
               </p>
             </div>
           ) : (
@@ -270,7 +323,7 @@ const containerStyle = {
   display: 'flex',
   justifyContent: 'center',
   alignItems: 'center',
-  backgroundImage: "url('/signupbackground.jpg.jpeg')",
+  backgroundImage: "url('/signupbackground.png')",
   backgroundSize: 'cover',
   backgroundPosition: 'center',
   backgroundRepeat: 'no-repeat',
