@@ -24,13 +24,10 @@ export default function SwitchAccountPage() {
     }
 
     try {
-      const { data: student, error: studentError } = await supabase
-        .from('students')
-        .select('email')
-        .eq('student_number', parseInt(studentNumber))
-        .single()
-
-      if (studentError || !student) {
+      const { data: loginEmail, error: studentError } = await supabase
+        .rpc('get_login_email', { p_student_number: parseInt(studentNumber) })
+ 
+      if (studentError || !loginEmail) {
         setMessage('❌ Invalid student number')
         console.error('Student not found:', studentError)
         setLoading(false)
@@ -38,7 +35,7 @@ export default function SwitchAccountPage() {
       }
 
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: student.email,
+        email: loginEmail,
         password: password
       })
 

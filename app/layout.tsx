@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { MusicProvider } from "@/lib/musicContext";
+import { Analytics } from "@vercel/analytics/next";
+import 'katex/dist/katex.min.css'
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,6 +32,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
+        <Analytics />
         <MusicProvider>{children}</MusicProvider>
       </body>
     </html>

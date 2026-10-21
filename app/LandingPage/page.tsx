@@ -20,10 +20,22 @@ type Specialization = {
   starts_year_level: number
 }
 
-// Degrees where a student may pick MORE than one specialisation (e.g. two majors).
-// Every other degree with specialisations lets the student pick exactly one.
-const MULTI_SPECIALIZATION_DEGREES = [33, 46]
+type ElectiveModule = {
+  module_id: number
+  module_code: string
+  module_name: string
+}
 
+type ElectiveGroup = {
+  pool_id: number
+  specialization_id: number | null
+  choose_count: number
+  required: number
+  modules: ElectiveModule[]
+}
+
+// Degrees where a student may follow several specialisations at once (BA, BSc General)
+const MULTI_SPECIALIZATION_DEGREES = [33, 46]
 const DEFAULT_MAX_YEAR = 4
 
 function yearLabel(n: number) {
@@ -44,6 +56,9 @@ export default function OnboardingPage() {
   const [maxYear, setMaxYear] = useState(DEFAULT_MAX_YEAR)
   const [specializations, setSpecializations] = useState<Specialization[]>([])
   const [selectedSpecs, setSelectedSpecs] = useState<number[]>([])
+  const [electiveGroups, setElectiveGroups] = useState<ElectiveGroup[]>([])
+  const [selectedElectives, setSelectedElectives] = useState<Record<number, number[]>>({})
+  const [optionsLoading, setOptionsLoading] = useState(false)
 
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
@@ -85,10 +100,7 @@ export default function OnboardingPage() {
   async function selectFaculty(facultyId: number) {
     setSelectedFaculty(facultyId)
     setSelectedDegree(null)
-    setSelectedYear('')
-    setSpecializations([])
-    setSelectedSpecs([])
-    setMaxYear(DEFAULT_MAX_YEAR)
+    resetYearChoices()
     setMessage('')
 
     const { data, error } = await supabase
@@ -105,7 +117,14 @@ export default function OnboardingPage() {
     }
   }
 
-  // How many years does this degree have? Use the highest year that has modules.
+  function resetYearChoices() {
+    setSelectedYear('')
+    setSpecializations([])
+    setSelectedSpecs([])
+    setElectiveGroups([])
+    setSelectedElectives({})
+  }
+
   async function loadMaxYear(degreeId: number) {
     const { data } = await supabase
       .from('degree_modules')
@@ -114,37 +133,110 @@ export default function OnboardingPage() {
       .order('year_level', { ascending: false })
       .limit(1)
 
-    const top = data && data.length > 0 ? data[0].year_level : 0
+    const top = data?.[0]?.year_level ?? DEFAULT_MAX_YEAR
     setMaxYear(Math.max(DEFAULT_MAX_YEAR, top))
   }
 
-  // Which specialisations does this degree offer at the chosen year?
-  async function loadSpecializations(degreeId: number, year: number) {
-    const { data, error } = await supabase
-      .from('degree_specializations')
-      .select('specialization_id, specialization_name, starts_year_level')
-      .eq('degree_id', degreeId)
-      .lte('starts_year_level', year)
-      .order('specialization_name')
+  // Loads what the student has to choose in this year: specialisations and electives
+  async function chooseYear(year: number) {
+    if (!selectedDegree) return
+    setSelectedYear(String(year))
+    setSelectedSpecs([])
+    setSelectedElectives({})
+    setSpecializations([])
+    setElectiveGroups([])
+    setMessage('')
+    setOptionsLoading(true)
 
-    if (error) {
-      console.error('Error fetching specialisations:', error)
-      setSpecializations([])
-      return
+    try {
+      const { data: specData, error: specError } = await supabase
+        .from('degree_specializations')
+        .select('specialization_id, specialization_name, starts_year_level')
+        .eq('degree_id', selectedDegree)
+        .lte('starts_year_level', year)
+        .order('specialization_name')
+
+      if (specError) console.error('Error fetching specialisations:', specError)
+      setSpecializations((specData as Specialization[]) ?? [])
+
+      const { data: reqData, error: reqError } = await supabase
+        .from('degree_elective_requirements')
+        .select('specialization_id, pool_id, choose_count')
+        .eq('degree_id', selectedDegree)
+        .eq('year_level', year)
+        .order('pool_id')
+
+      if (reqError) {
+        console.error('Error fetching electives:', reqError)
+        return
+      }
+
+      const reqs = reqData ?? []
+      if (reqs.length === 0) return
+
+      const poolIds = reqs.map((r: any) => r.pool_id as number)
+      const { data: linkData } = await supabase
+        .from('elective_pool_modules')
+        .select('pool_id, module_id')
+        .in('pool_id', poolIds)
+
+      const moduleIds = Array.from(new Set((linkData ?? []).map((l: any) => l.module_id as number)))
+      const { data: modData } = moduleIds.length
+        ? await supabase
+            .from('modules')
+            .select('module_id, module_code, module_name')
+            .in('module_id', moduleIds)
+        : { data: [] as ElectiveModule[] }
+
+      const byId = new Map<number, ElectiveModule>()
+      for (const m of (modData ?? []) as ElectiveModule[]) byId.set(m.module_id, m)
+
+      const groups: ElectiveGroup[] = reqs.map((r: any) => {
+        const mods = (linkData ?? [])
+          .filter((l: any) => l.pool_id === r.pool_id)
+          .map((l: any) => byId.get(l.module_id))
+          .filter((m): m is ElectiveModule => !!m)
+          .sort((a, b) => a.module_name.localeCompare(b.module_name))
+        return {
+          pool_id: r.pool_id,
+          specialization_id: r.specialization_id,
+          choose_count: r.choose_count,
+          required: Math.min(r.choose_count, mods.length),
+          modules: mods,
+        }
+      })
+      setElectiveGroups(groups.filter((g) => g.modules.length > 0))
+    } finally {
+      setOptionsLoading(false)
     }
-    setSpecializations(data ?? [])
   }
 
   function toggleSpecialization(id: number) {
     setMessage('')
-    if (selectedDegree && MULTI_SPECIALIZATION_DEGREES.includes(selectedDegree)) {
-      setSelectedSpecs((prev) =>
-        prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-      )
+    if (selectedDegree !== null && MULTI_SPECIALIZATION_DEGREES.includes(selectedDegree)) {
+      setSelectedSpecs((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]))
     } else {
-      setSelectedSpecs([id])
+      setSelectedSpecs((prev) => (prev.includes(id) ? [] : [id]))
     }
   }
+
+  function toggleElective(group: ElectiveGroup, moduleId: number) {
+    setMessage('')
+    setSelectedElectives((prev) => {
+      const current = prev[group.pool_id] ?? []
+      if (current.includes(moduleId)) {
+        return { ...prev, [group.pool_id]: current.filter((m) => m !== moduleId) }
+      }
+      if (group.choose_count === 1) return { ...prev, [group.pool_id]: [moduleId] }
+      if (current.length >= group.choose_count) return prev
+      return { ...prev, [group.pool_id]: [...current, moduleId] }
+    })
+  }
+
+  // Elective groups that apply to the current choices (common ones + those of chosen specialisations)
+  const visibleGroups = electiveGroups.filter(
+    (g) => g.specialization_id === null || selectedSpecs.includes(g.specialization_id)
+  )
 
   async function handleContinue() {
     setMessage('')
@@ -174,6 +266,15 @@ export default function OnboardingPage() {
       return
     }
 
+    for (const g of visibleGroups) {
+      const picked = (selectedElectives[g.pool_id] ?? []).length
+      if (picked < g.required) {
+        setMessage(`Please choose ${g.required} elective${g.required !== 1 ? 's' : ''} in every elective group.`)
+        setLoading(false)
+        return
+      }
+    }
+
     const { data: { user } } = await supabase.auth.getUser()
     if (!user?.email) {
       setMessage('User not found. Please sign in again.')
@@ -190,8 +291,7 @@ export default function OnboardingPage() {
         .update({
           degree_id: selectedDegree,
           current_year: Number(selectedYear),
-          // first choice kept here for older code; the full list lives in student_specializations
-          specialization_id: selectedSpecs.length > 0 ? selectedSpecs[0] : null,
+          specialization_id: selectedSpecs[0] ?? null,
         })
         .eq('student_number', studentNum)
 
@@ -202,32 +302,54 @@ export default function OnboardingPage() {
         return
       }
 
-      // Replace the student's specialisation choices with the new ones
-      const { error: clearError } = await supabase
+      // Specialisation choices (replace the old ones)
+      const { error: delSpecError } = await supabase
         .from('student_specializations')
         .delete()
         .eq('student_number', studentNum)
-
-      if (clearError) {
-        console.error('Clear specialisations error:', clearError)
-        setMessage(`Error saving specialisation: ${clearError.message}`)
+      if (delSpecError) {
+        console.error('Specialisation delete error:', delSpecError)
+        setMessage(`Error saving specialisation: ${delSpecError.message}`)
         setLoading(false)
         return
       }
-
       if (selectedSpecs.length > 0) {
-        const { error: specError } = await supabase
+        const { error: insSpecError } = await supabase
           .from('student_specializations')
-          .insert(
-            selectedSpecs.map((id) => ({
-              student_number: studentNum,
-              specialization_id: id,
-            }))
-          )
+          .insert(selectedSpecs.map((id) => ({ student_number: studentNum, specialization_id: id })))
+        if (insSpecError) {
+          console.error('Specialisation insert error:', insSpecError)
+          setMessage(`Error saving specialisation: ${insSpecError.message}`)
+          setLoading(false)
+          return
+        }
+      }
 
-        if (specError) {
-          console.error('Save specialisations error:', specError)
-          setMessage(`Error saving specialisation: ${specError.message}`)
+      // Elective choices (replace the old ones)
+      const { error: delElecError } = await supabase
+        .from('student_elective_choices')
+        .delete()
+        .eq('student_number', studentNum)
+      if (delElecError) {
+        console.error('Elective delete error:', delElecError)
+        setMessage(`Error saving electives: ${delElecError.message}`)
+        setLoading(false)
+        return
+      }
+      const electiveRows = visibleGroups.flatMap((g) =>
+        (selectedElectives[g.pool_id] ?? []).map((module_id) => ({
+          student_number: studentNum,
+          pool_id: g.pool_id,
+          module_id,
+        }))
+      )
+      if (electiveRows.length > 0) {
+        const { error: insElecError } = await supabase
+          .from('student_elective_choices')
+          .insert(electiveRows)
+        if (insElecError) {
+          console.error('Elective insert error:', insElecError)
+          setMessage(`Error saving electives: ${insElecError.message}`)
           setLoading(false)
           return
         }
@@ -339,9 +461,8 @@ export default function OnboardingPage() {
                     key={degree.degree_id}
                     onClick={() => {
                       setSelectedDegree(degree.degree_id)
-                      setSelectedYear('')
-                      setSpecializations([])
-                      setSelectedSpecs([])
+                      resetYearChoices()
+                      setMessage('')
                       loadMaxYear(degree.degree_id)
                     }}
                     style={{
@@ -362,76 +483,125 @@ export default function OnboardingPage() {
           )}
 
           {selectedDegree && (
-            <div style={{ width: '250px', marginTop: '260px' }}>
-              <h3>Year of study?</h3>
-
-              <select
-                value={selectedYear}
-                onChange={(e) => {
-                  const value = e.target.value
-                  setSelectedYear(value)
-                  setSelectedSpecs([])
-                  setMessage('')
-                  if (value && selectedDegree) {
-                    loadSpecializations(selectedDegree, Number(value))
-                  } else {
-                    setSpecializations([])
-                  }
-                }}
-                style={selectStyle}
-              >
-                <option value="" style={{ backgroundColor: '#222', color: 'white' }}>
-                  Select Year
-                </option>
-                {Array.from({ length: maxYear }, (_, i) => i + 1).map((y) => (
-                  <option
-                    key={y}
-                    value={String(y)}
-                    style={{ backgroundColor: '#222', color: 'white' }}
+            <div style={{ width: '420px', marginTop: '90px' }}>
+              {!selectedYear ? (
+                <>
+                  <h3>Year of study?</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    {Array.from({ length: maxYear }, (_, i) => i + 1).map((year) => (
+                      <button
+                        key={year}
+                        onClick={() => chooseYear(year)}
+                        style={{ ...buttonStyle, marginBottom: '0' }}
+                      >
+                        {yearLabel(year)}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
                   >
-                    {yearLabel(y)}
-                  </option>
-                ))}
-              </select>
+                    <h3 style={{ margin: 0 }}>{yearLabel(Number(selectedYear))}</h3>
+                    <button
+                      onClick={() => {
+                        resetYearChoices()
+                        setMessage('')
+                      }}
+                      style={linkButtonStyle}
+                    >
+                      Change year
+                    </button>
+                  </div>
+
+                  {optionsLoading && <p style={{ opacity: 0.7 }}>Loading your options...</p>}
+
+                  {!optionsLoading && specializations.length > 0 && (
+                    <div style={{ marginTop: '20px' }}>
+                      <h3 style={{ marginBottom: '4px' }}>
+                        {selectedDegree !== null && MULTI_SPECIALIZATION_DEGREES.includes(selectedDegree)
+                          ? 'Choose your specialisation(s)'
+                          : 'Choose your specialisation'}
+                      </h3>
+                      <p style={{ opacity: 0.7, marginTop: 0, fontSize: '13px' }}>
+                        {selectedDegree !== null && MULTI_SPECIALIZATION_DEGREES.includes(selectedDegree)
+                          ? 'You can pick more than one.'
+                          : 'Pick the one you are following.'}
+                      </p>
+                      <div style={optionListStyle}>
+                        {specializations.map((spec) => (
+                          <button
+                            key={spec.specialization_id}
+                            onClick={() => toggleSpecialization(spec.specialization_id)}
+                            style={{
+                              ...buttonStyle,
+                              marginBottom: '0',
+                              backgroundColor: selectedSpecs.includes(spec.specialization_id)
+                                ? 'blue'
+                                : 'rgba(255,255,255,0.1)',
+                            }}
+                          >
+                            {spec.specialization_name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {!optionsLoading &&
+                    visibleGroups.map((group, index) => {
+                      const picked = selectedElectives[group.pool_id] ?? []
+                      const specName = specializations.find(
+                        (s) => s.specialization_id === group.specialization_id
+                      )?.specialization_name
+                      return (
+                        <div key={group.pool_id} style={{ marginTop: '20px' }}>
+                          <h3 style={{ marginBottom: '4px' }}>
+                            {visibleGroups.length > 1 ? `Electives (group ${index + 1})` : 'Choose your electives'}
+                            {specName ? ` · ${specName}` : ''}
+                          </h3>
+                          <p style={{ opacity: 0.7, marginTop: 0, fontSize: '13px' }}>
+                            Choose {group.required} ({picked.length}/{group.required} picked)
+                          </p>
+                          <div style={optionListStyle}>
+                            {group.modules.map((mod) => (
+                              <button
+                                key={mod.module_id}
+                                onClick={() => toggleElective(group, mod.module_id)}
+                                style={{
+                                  ...buttonStyle,
+                                  marginBottom: '0',
+                                  textAlign: 'left' as const,
+                                  backgroundColor: picked.includes(mod.module_id)
+                                    ? 'blue'
+                                    : 'rgba(255,255,255,0.1)',
+                                }}
+                              >
+                                <span style={{ opacity: 0.6, marginRight: '8px' }}>{mod.module_code}</span>
+                                {mod.module_name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })}
+
+                  {!optionsLoading && specializations.length === 0 && visibleGroups.length === 0 && (
+                    <p style={{ opacity: 0.7, marginTop: '20px' }}>
+                      Nothing to choose for this year. Press Continue.
+                    </p>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>
-
-        {selectedYear && specializations.length > 0 && (
-          <div style={{ marginTop: '40px', paddingBottom: '90px' }}>
-            <h3>
-              {selectedDegree && MULTI_SPECIALIZATION_DEGREES.includes(selectedDegree)
-                ? 'Choose your specialisations (you can pick more than one)'
-                : 'Choose your specialisation'}
-            </h3>
-            <p style={{ opacity: 0.8, marginTop: 0 }}>
-              Your modules will depend on what you choose here.
-            </p>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-                gap: '10px',
-              }}
-            >
-              {specializations.map((spec) => (
-                <button
-                  key={spec.specialization_id}
-                  onClick={() => toggleSpecialization(spec.specialization_id)}
-                  style={{
-                    ...buttonStyle,
-                    marginBottom: 0,
-                    backgroundColor: selectedSpecs.includes(spec.specialization_id)
-                      ? 'blue'
-                      : 'rgba(255,255,255,0.1)',
-                  }}
-                >
-                  {spec.specialization_name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {selectedYear && (
           <button
@@ -486,6 +656,25 @@ const buttonStyle = {
   cursor: 'pointer',
   marginBottom: '10px',
   transition: 'all 0.2s ease',
+}
+
+const optionListStyle = {
+  display: 'flex',
+  flexDirection: 'column' as const,
+  gap: '8px',
+  maxHeight: '320px',
+  overflowY: 'auto' as const,
+  paddingRight: '4px',
+}
+
+const linkButtonStyle = {
+  background: 'none',
+  border: 'none',
+  color: 'white',
+  opacity: 0.7,
+  cursor: 'pointer',
+  textDecoration: 'underline',
+  fontSize: '13px',
 }
 
 const inputStyle = {
