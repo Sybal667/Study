@@ -1,6 +1,16 @@
 'use client'
 
+import { useState } from 'react'
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+import { StickyNote, Download, Check } from 'lucide-react'
+import {
+    ExportModal,
+    ModalButton,
+    HighlightSummary,
+    HighlightPreview,
+    EmptyHighlights,
+    Notice,
+} from '@/components/ExportModal'
 
 interface Highlight {
     highlight_id: number
@@ -20,7 +30,17 @@ export default function NotesOnlyExport({
     pdfFileName,
     onClose,
 }: NotesOnlyExportProps) {
+    const [busy, setBusy] = useState(false)
+    const [done, setDone] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+
     const handleDownloadNotes = async () => {
+        if (busy) return
+
+        setBusy(true)
+        setError(null)
+        setDone(false)
+
         try {
             const pdfDoc = await PDFDocument.create()
             const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
@@ -165,58 +185,54 @@ export default function NotesOnlyExport({
             link.remove()
 
             setTimeout(() => URL.revokeObjectURL(url), 1000)
+            setDone(true)
         } catch (error) {
             console.error('Failed to export study notes:', error)
+            setError('Could not create the notes. Please try again.')
+        } finally {
+            setBusy(false)
         }
     }
 
+    const displayName = pdfFileName || 'document.pdf'
+
     return (
-        <div
-            style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'rgba(0,0,0,0.7)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                zIndex: 10000,
-            }}
-        >
-            <div
-                style={{
-                    width: '70%',
-                    maxWidth: '700px',
-                    backgroundColor: 'white',
-                    color: 'black',
-                    padding: '30px',
-                    borderRadius: '12px',
-                }}
-            >
-                <h2>Study Notes</h2>
-
-                <p>
-                    Download a study summary containing all saved highlights and notes
-                    from this document.
-                </p>
-
-                {highlights.length === 0 && (
-                    <p>No saved highlights or notes for this document.</p>
-                )}
-
-                <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-                    <button
+        <ExportModal
+            icon={<StickyNote size={20} />}
+            title="Study Notes"
+            subtitle={displayName}
+            onClose={onClose}
+            footer={
+                <>
+                    <ModalButton onClick={onClose}>Close</ModalButton>
+                    <ModalButton
+                        variant="primary"
                         onClick={handleDownloadNotes}
                         disabled={highlights.length === 0}
+                        loading={busy}
+                        done={done && !busy}
+                        icon={done && !busy ? <Check size={16} /> : <Download size={16} />}
                     >
-                        Download Notes
-                    </button>
+                        {busy ? 'Preparing...' : done ? 'Downloaded' : 'Download Notes'}
+                    </ModalButton>
+                </>
+            }
+        >
+            <p className="em-desc">
+                A study summary with every highlight and note from this document, page by page, in one clean PDF.
+            </p>
 
-                    <button onClick={onClose}>Close</button>
-                </div>
-            </div>
-        </div>
+            {highlights.length === 0 ? (
+                <EmptyHighlights />
+            ) : (
+                <>
+                    <HighlightSummary highlights={highlights} />
+                    <HighlightPreview highlights={highlights} />
+                </>
+            )}
+
+            {error && <Notice kind="error">{error}</Notice>}
+            {done && !busy && <Notice kind="success">Your notes were downloaded.</Notice>}
+        </ExportModal>
     )
 }

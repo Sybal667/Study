@@ -376,7 +376,7 @@ export default function OnboardingPage() {
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundImage: "url('/signupbackground.png')",
+        backgroundImage: "url('/signupbackground.jpg.jpeg')",
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',

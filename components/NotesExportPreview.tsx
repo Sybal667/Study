@@ -1,6 +1,16 @@
 'use client'
 
+import { useState } from 'react'
 import { PDFDocument, PDFName, rgb, StandardFonts, PDFPage } from 'pdf-lib'
+import { FileDown, Download, Check } from 'lucide-react'
+import {
+    ExportModal,
+    ModalButton,
+    HighlightSummary,
+    HighlightPreview,
+    EmptyHighlights,
+    Notice,
+} from '@/components/ExportModal'
 
 interface HighlightRect {
     xPct: number
@@ -30,8 +40,16 @@ export default function NotesExportPreview({
     pdfUrl,
     onClose,
 }: NotesExportPreviewProps) {
+    const [busy, setBusy] = useState(false)
+    const [done, setDone] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+
     const handleDownloadPdf = async () => {
-        if (!pdfUrl) return
+        if (!pdfUrl || busy) return
+
+        setBusy(true)
+        setError(null)
+        setDone(false)
 
         try {
             const response = await fetch(pdfUrl)
@@ -242,58 +260,55 @@ export default function NotesExportPreview({
             link.remove()
 
             setTimeout(() => URL.revokeObjectURL(url), 1000)
+            setDone(true)
         } catch (error) {
             console.error('Failed to export highlighted PDF:', error)
+            setError('Could not create the PDF. Please try again.')
+        } finally {
+            setBusy(false)
         }
     }
 
+    const displayName = pdfFileName || 'document.pdf'
+
     return (
-        <div
-            style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'rgba(0,0,0,0.7)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                zIndex: 10000,
-            }}
-        >
-            <div
-                style={{
-                    width: '70%',
-                    maxWidth: '900px',
-                    maxHeight: '80vh',
-                    overflowY: 'auto',
-                    backgroundColor: 'white',
-                    color: 'black',
-                    padding: '30px',
-                    borderRadius: '12px',
-                }}
-            >
-                <h2>Export PDF</h2>
-                <p>
-                    This will download the original PDF with your saved
-                    highlights and clickable notes added.
-                </p>
-
-                {highlights.length === 0 && (
-                    <p>No saved highlights or notes for this document.</p>
-                )}
-
-                <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-                    <button
+        <ExportModal
+            icon={<FileDown size={20} />}
+            title="Export PDF"
+            subtitle={displayName}
+            onClose={onClose}
+            footer={
+                <>
+                    <ModalButton onClick={onClose}>Close</ModalButton>
+                    <ModalButton
+                        variant="primary"
                         onClick={handleDownloadPdf}
                         disabled={!pdfUrl || highlights.length === 0}
+                        loading={busy}
+                        done={done && !busy}
+                        icon={done && !busy ? <Check size={16} /> : <Download size={16} />}
                     >
-                        Download PDF
-                    </button>
-                    <button onClick={onClose}>Close</button>
-                </div>
-            </div>
-        </div>
+                        {busy ? 'Preparing...' : done ? 'Downloaded' : 'Download PDF'}
+                    </ModalButton>
+                </>
+            }
+        >
+            <p className="em-desc">
+                Download the original PDF with your saved highlights drawn on it. Each note gets a clickable marker that
+                jumps to a Notes page at the front.
+            </p>
+
+            {highlights.length === 0 ? (
+                <EmptyHighlights />
+            ) : (
+                <>
+                    <HighlightSummary highlights={highlights} />
+                    <HighlightPreview highlights={highlights} />
+                </>
+            )}
+
+            {error && <Notice kind="error">{error}</Notice>}
+            {done && !busy && <Notice kind="success">Your PDF was downloaded.</Notice>}
+        </ExportModal>
     )
 }
