@@ -816,6 +816,7 @@ const containerStyle = {
 }
 
 const glassCardStyle = {
+  
   width: '95%',
   maxWidth: '1200px',
   minHeight: '600px',

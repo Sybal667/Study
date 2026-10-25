@@ -118,32 +118,94 @@ interface PracticeSetViewProps {
 }
 
 function PracticeSetView({ set, onBack, submitAnswer, getExplanation }: PracticeSetViewProps) {
-  const [loadingExplanation, setLoadingExplanation] = useState<number | null>(null)
+  const [loadingIds, setLoadingIds] = useState<number[]>([])
+  // Answers the student has picked but not submitted yet.
+  const [selections, setSelections] = useState<Record<number, string>>({})
+  const [submitting, setSubmitting] = useState(false)
 
-  const handleSelect = async (questionId: number, option: string) => {
-    const result = await submitAnswer(questionId, option)
-    if (result && !result.attempt.is_correct) {
-      setLoadingExplanation(questionId)
-      await getExplanation(questionId)
-      setLoadingExplanation(null)
+  const questions = set.pdf_practice_questions
+  const unanswered = questions.filter((q) => q.pdf_practice_attempts.length === 0)
+  const pickedCount = unanswered.filter((q) => selections[q.question_id]).length
+  const canSubmit = unanswered.length > 0 && pickedCount === unanswered.length && !submitting
+  const allSubmitted = questions.length > 0 && unanswered.length === 0
+  const score = questions.filter((q) => q.pdf_practice_attempts[0]?.is_correct).length
+
+  const handlePick = (questionId: number, option: string) => {
+    setSelections((prev) => ({ ...prev, [questionId]: option }))
+  }
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return
+    setSubmitting(true)
+
+    try {
+      const results = await Promise.all(
+        unanswered.map(async (q) => ({
+          questionId: q.question_id,
+          result: await submitAnswer(q.question_id, selections[q.question_id]),
+        }))
+      )
+
+      // Same as before: wrong answers get their explanation loaded automatically.
+      const wrongIds = results
+        .filter((r) => r.result && !r.result.attempt.is_correct)
+        .map((r) => r.questionId)
+
+      setSelections({})
+      setSubmitting(false)
+
+      if (wrongIds.length > 0) {
+        setLoadingIds(wrongIds)
+        for (const id of wrongIds) {
+          await getExplanation(id)
+          setLoadingIds((prev) => prev.filter((x) => x !== id))
+        }
+      }
+    } finally {
+      setSubmitting(false)
     }
   }
 
   const handleReveal = async (questionId: number) => {
-    setLoadingExplanation(questionId)
+    setLoadingIds((prev) => [...prev, questionId])
     await getExplanation(questionId)
-    setLoadingExplanation(null)
+    setLoadingIds((prev) => prev.filter((x) => x !== questionId))
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <style>{`
+        .practice-option:hover {
+          background-color: rgba(255, 255, 255, 0.16) !important;
+          border-color: rgba(255, 255, 255, 0.55) !important;
+        }
+      `}</style>
+
       <button onClick={onBack} style={{ ...navButtonStyle, alignSelf: 'flex-start', color: 'white' }}>
         ← Back
       </button>
 
-      {set.pdf_practice_questions.map((q, i) => {
+      {allSubmitted && (
+        <div
+          style={{
+            padding: '12px 14px',
+            borderRadius: '10px',
+            backgroundColor: score === questions.length ? 'rgba(76, 175, 80, 0.2)' : 'rgba(30, 58, 138, 0.35)',
+            border: `1px solid ${score === questions.length ? 'rgba(76, 175, 80, 0.6)' : 'rgba(255,255,255,0.2)'}`,
+            color: 'white',
+            fontSize: '14px',
+            fontWeight: 'bold',
+            textAlign: 'center',
+          }}
+        >
+          You got {score} / {questions.length} correct
+        </div>
+      )}
+
+      {questions.map((q, i) => {
         const attempt = q.pdf_practice_attempts[0]
         const hasAnswered = !!attempt
+        const chosen = hasAnswered ? attempt.selected_answer : selections[q.question_id]
 
         return (
           <div
@@ -162,30 +224,66 @@ function PracticeSetView({ set, onBack, submitAnswer, getExplanation }: Practice
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {q.options.map((option) => {
-                const isSelected = attempt?.selected_answer === option
+                const isChosen = chosen === option
                 const isCorrectOption = option === q.correct_answer
 
                 let backgroundColor = 'rgba(255,255,255,0.06)'
-                if (hasAnswered && isCorrectOption) backgroundColor = 'rgba(76, 175, 80, 0.3)'
-                else if (hasAnswered && isSelected && !isCorrectOption) backgroundColor = 'rgba(255, 107, 107, 0.3)'
+                let borderColor = 'rgba(255,255,255,0.15)'
+                let opacity = 1
+                let tag = ''
+
+                if (!hasAnswered) {
+                  // still answering: show which option is picked
+                  if (isChosen) {
+                    backgroundColor = 'rgba(30, 58, 138, 0.75)'
+                    borderColor = 'rgba(130, 170, 255, 0.9)'
+                    tag = 'Selected'
+                  }
+                } else if (isCorrectOption) {
+                  // submitted: the right answer is always green
+                  backgroundColor = 'rgba(76, 175, 80, 0.3)'
+                  borderColor = '#4CAF50'
+                  tag = isChosen ? '✓ Your answer' : '✓ Correct answer'
+                } else if (isChosen) {
+                  // submitted: a wrong pick is red
+                  backgroundColor = 'rgba(255, 107, 107, 0.3)'
+                  borderColor = '#ff6b6b'
+                  tag = '✗ Your answer'
+                } else {
+                  opacity = 0.55
+                }
+
+                const locked = hasAnswered || submitting
 
                 return (
                   <button
                     key={option}
-                    onClick={() => !hasAnswered && handleSelect(q.question_id, option)}
-                    disabled={hasAnswered}
+                    className={locked ? undefined : 'practice-option'}
+                    onClick={() => !locked && handlePick(q.question_id, option)}
+                    disabled={locked}
                     style={{
                       textAlign: 'left',
                       padding: '10px 12px',
                       borderRadius: '8px',
-                      border: '1px solid rgba(255,255,255,0.15)',
+                      border: `1px solid ${borderColor}`,
                       backgroundColor,
                       color: 'white',
                       fontSize: '13px',
-                      cursor: hasAnswered ? 'default' : 'pointer',
+                      opacity,
+                      cursor: locked ? 'default' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '10px',
+                      transition: 'background-color 0.15s ease, border-color 0.15s ease',
                     }}
                   >
-                    {option}
+                    <span>{option}</span>
+                    {tag && (
+                      <span style={{ fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap', opacity: 0.9 }}>
+                        {tag}
+                      </span>
+                    )}
                   </button>
                 )
               })}
@@ -193,11 +291,11 @@ function PracticeSetView({ set, onBack, submitAnswer, getExplanation }: Practice
 
             {hasAnswered && (
               <div style={{ marginTop: '10px' }}>
-                {!q.explanation && loadingExplanation === q.question_id && (
+                {!q.explanation && loadingIds.includes(q.question_id) && (
                   <div style={{ fontSize: '12px', opacity: 0.6, fontStyle: 'italic' }}>Loading explanation...</div>
                 )}
 
-                {!q.explanation && loadingExplanation !== q.question_id && (
+                {!q.explanation && !loadingIds.includes(q.question_id) && (
                   <button
                     onClick={() => handleReveal(q.question_id)}
                     style={{ ...navButtonStyle, fontSize: '12px', padding: '6px 10px', color: 'white' }}
@@ -216,6 +314,33 @@ function PracticeSetView({ set, onBack, submitAnswer, getExplanation }: Practice
           </div>
         )
       })}
+
+      {!allSubmitted && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <button
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            style={{
+              padding: '12px 16px',
+              borderRadius: '10px',
+              border: '1px solid rgba(255,255,255,0.28)',
+              backgroundColor: 'rgba(30, 58, 138, 0.95)',
+              color: 'white',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              cursor: canSubmit ? 'pointer' : 'not-allowed',
+              opacity: canSubmit ? 1 : 0.45,
+              transition: 'opacity 0.15s ease',
+            }}
+          >
+            {submitting ? 'Submitting...' : 'Submit answers'}
+          </button>
+          <div style={{ textAlign: 'center', fontSize: '12px', color: 'white', opacity: 0.6 }}>
+            {pickedCount} of {unanswered.length} answered
+            {pickedCount < unanswered.length ? ' · answer every question to submit' : ''}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
